@@ -9,10 +9,12 @@ import time
 from typing import List, Optional
 from urllib.parse import quote, unquote
 
-import pyexiv2
+# import pyexiv2
+from PIL import Image
 from PyQt5 import QtCore, QtGui, QtQml, QtQuick
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, pyqtProperty, Qt
 
+import jfti
 # from . import common, gameslib, gog, humble, local, qrc
 
 # TODO: more platform-independant path
@@ -32,37 +34,36 @@ IMAGE_MAGICS = ((b'\x89PNG\x0d\x0a\x1a\x0a',),
 
 
 def extract_metadata(path):
-    metadata = pyexiv2.ImageMetadata(path)
-    metadata.read()
-    tags = []
-    for tag in ('Iptc.Application2.Keywords', 'Xmp.dc.subject'):
-        try:
-            if tag in metadata:
-                tags = metadata[tag].value
-                break
-        except UnicodeDecodeError:
-            continue
-    return tags, metadata.dimensions
+    try:
+        tags = sorted(jfti.read_tags(path))
+    except Exception:
+        print(path)
+        raise
+    size = QtGui.QImage(str(path)).size()
+    # TODO: maybe get size from jfti too?
+    # size = Image.open(str(path)).size
+    return tags, (size.width(), size.height())
 
 
 def write_tags(path, tags):
-    metadata = pyexiv2.ImageMetadata(path)
-    try:
-        metadata.read()
-    except OSError:
-        return False
-    else:
-        for tag in ('Iptc.Application2.Keywords', 'Xmp.dc.subject'):
-            if not tags:
-                try:
-                    if tag in metadata:
-                        del metadata[tag]
-                except UnicodeDecodeError:
-                    continue
-            else:
-                metadata[tag] = list(tags)
-        metadata.write()
-        return True
+    return False
+    # metadata = pyexiv2.ImageMetadata(path)
+    # try:
+        # metadata.read()
+    # except OSError:
+        # return False
+    # else:
+        # for tag in ('Iptc.Application2.Keywords', 'Xmp.dc.subject'):
+            # if not tags:
+                # try:
+                    # if tag in metadata:
+                        # del metadata[tag]
+                # except UnicodeDecodeError:
+                    # continue
+            # else:
+                # metadata[tag] = list(tags)
+        # metadata.write()
+        # return True
 
 
 def try_to_load_image(path: Path):
@@ -70,7 +71,6 @@ def try_to_load_image(path: Path):
     if not pixmap.isNull():
         return pixmap, path.suffix.lower()
     else:
-        # try:
         with path.open('rb') as f:
             magic_data = f.read(8)
 
@@ -309,6 +309,14 @@ class Tag(QtCore.QObject):
         self.stateChanged.emit(self._state)
 
 
+# class TagDialogBackEnd(QtCore.QObject):
+    # def __init__(self) -> None:
+        # super().__init__()
+
+    # def selectedTags(self) -> List[Tag]:
+
+
+
 class BackEnd(QtCore.QObject):
     imagesChanged = pyqtSignal()
     tagsChanged = pyqtSignal()
@@ -340,10 +348,13 @@ class BackEnd(QtCore.QObject):
         cache = json.loads(CACHE.read_text())
         tag_count = Counter()
         root_paths = [str(p) for p in self.paths]
-        for n, (raw_path, data) in enumerate(cache['images'].items()):
+        for n, (raw_path, data) in enumerate(list(cache['images'].items())):
             # if n % 1000 == 0:
                 # print(n)
             path = Path(raw_path)
+            if not path.exists():
+                del cache['images'][raw_path]
+                continue
             for p in root_paths:
                 if raw_path.startswith(p):
                     break

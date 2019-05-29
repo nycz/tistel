@@ -104,12 +104,18 @@ ApplicationWindow {
                     text: backend.imageModel.length > 0 ? backend.imageModel[thumbview.currentIndex].fullPath : ""
                     Layout.fillWidth: true
                 }
-                Text {
-                    color: "#eee"
-                    font.pointSize: 16
-                    wrapMode: Text.WrapAnywhere
-                    text: backend.imageModel.length > 0 ? backend.imageModel[thumbview.currentIndex].tags : ""
+                ListView {
+                    height: 100
                     Layout.fillWidth: true
+                    model: backend.imageModel.length > 0 ? backend.imageModel[thumbview.currentIndex].tags : []
+                    delegate: Text {
+                        color: "#eee"
+                        font.pointSize: 16
+                        width: 100
+                        wrapMode: Text.WrapAnywhere
+                        text: model.modelData
+
+                    }
                 }
             }
         }
