@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 from collections import Counter
-import copy
 import enum
 import hashlib
 import json
 from pathlib import Path
-import shutil
 import struct
 import sys
 import time
-from typing import (Any, Dict, Iterable, List, NamedTuple,
+import typing
+from typing import (Any, cast, Dict, Iterable, List,
                     Optional, Set, Tuple)
 from urllib.parse import quote
 import zlib
 
 from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import pyqtSignal, Qt
 
 import jfti
 
@@ -32,9 +31,9 @@ CSS_FILE = 'qt.css'
 
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
-IMAGE_MAGICS = ((b'\x89PNG\x0d\x0a\x1a\x0a',),
-                (b'\xff\xd8',),
-                (b'\x47\x49\x46\x38\x39\x61', b'\x47\x49\x46\x38\x37\x61'))
+IMAGE_MAGICS = ([b'\x89PNG\x0d\x0a\x1a\x0a'],
+                [b'\xff\xd8'],
+                [b'GIF87a', b'GIF89a'])
 
 
 class TagState(enum.Enum):
@@ -48,7 +47,7 @@ class TagListWidget(QtWidgets.QListWidget):
     tag_blacklisted = QtCore.pyqtSignal(str)
     tag_whitelisted = QtCore.pyqtSignal(str)
 
-    def mouseMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         return
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -68,45 +67,48 @@ class TagListWidget(QtWidgets.QListWidget):
                     new_state = TagState.DEFAULT
             if new_state is not None:
                 item.setData(TAGSTATE, new_state)
-                item.update_looks()
+                update_looks(item)
                 self.tag_state_updated.emit()
 
 
 class TagListWidgetItem(QtWidgets.QListWidgetItem):
-    def __lt__(self, other):
-        return self.data(TAGS) < other.data(TAGS)
+    def __lt__(self, other: QtWidgets.QListWidgetItem) -> bool:
+        result: bool = self.data(TAGS) < other.data(TAGS)
+        return result
 
-    def update_looks(self):
-        count = self.data(TAGS)
-        visible_count = self.data(VISIBLE_TAGS)
-        state = self.data(TAGSTATE)
-        colors = {TagState.WHITELISTED: Qt.darkGreen,
-                  TagState.DEFAULT: Qt.black,
-                  TagState.BLACKLISTED: Qt.darkRed}
-        color = QtGui.QColor(colors[state])
-        if (count == 0 or visible_count == 0) \
-                and state != TagState.BLACKLISTED:
-            color.setAlphaF(0.3)
-            if not self.font().italic():
-                font = self.font()
-                font.setItalic(True)
-                self.setFont(font)
-        elif self.font().italic():
-                font = self.font()
-                font.setItalic(False)
-                self.setFont(font)
-        self.setForeground(QtGui.QBrush(color))
+
+def update_looks(tag_item: QtWidgets.QListWidgetItem) -> None:
+    count = tag_item.data(TAGS)
+    visible_count = tag_item.data(VISIBLE_TAGS)
+    state = tag_item.data(TAGSTATE)
+    colors = {TagState.WHITELISTED: Qt.darkGreen,
+              TagState.DEFAULT: Qt.black,
+              TagState.BLACKLISTED: Qt.darkRed}
+    color = QtGui.QColor(colors[state])
+    if (count == 0 or visible_count == 0) \
+            and state != TagState.BLACKLISTED:
+        color.setAlphaF(0.3)
+        if not tag_item.font().italic():
+            font = tag_item.font()
+            font.setItalic(True)
+            tag_item.setFont(font)
+    elif tag_item.font().italic():
+        font = tag_item.font()
+        font.setItalic(False)
+        tag_item.setFont(font)
+    tag_item.setForeground(QtGui.QBrush(color))
 
 
 def read_config() -> Dict[str, Any]:
     if not CONFIG.exists():
-        default_config = {'directories': []}
+        default_config: Dict[str, Any] = {'directories': []}
         if not CONFIG.parent.exists():
             CONFIG.parent.mkdir(parents=True)
         CONFIG.write_text(json.dumps(default_config, indent=2))
         return default_config
     else:
-        return json.loads(CONFIG.read_text())
+        config: Dict[str, Any] = json.loads(CONFIG.read_text())
+        return config
 
 
 def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
@@ -117,7 +119,6 @@ def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
         raise
     size = QtGui.QImage(str(path)).size()
     # TODO: maybe get size from jfti too?
-    # size = Image.open(str(path)).size
     return tags, (size.width(), size.height())
 
 
@@ -148,7 +149,7 @@ def try_to_load_image(path: Path
 
 
 def generate_thumbnail(thumb_path: Path, image_path: Path,
-                       uri_path: str) -> bool:
+                       uri_path: bytes) -> bool:
     pngbytes = QtCore.QByteArray()
     buf = QtCore.QBuffer(pngbytes)
     pixmap, img_format = try_to_load_image(image_path)
@@ -165,7 +166,6 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     offset += 12 + first_chunk_length
     mtime = png_text_chunk(b'Thumb::MTime',
                            str(int(image_path.stat().st_mtime)).encode())
-                           # str(int(os.path.getmtime(image_path))).encode())
     uri = png_text_chunk(b'Thumb::URI', uri_path)
     software = png_text_chunk(b'Software', b'imgview')
     data = data[:offset] + mtime + uri + software + data[offset:]
@@ -186,7 +186,6 @@ class ImageLoader(QtCore.QObject):
         self.cached_thumbs: Dict[Path, QtGui.QIcon] = {}
 
     def load_image(self, batch: int, imgs: Iterable[Tuple[int, Path]]) -> None:
-        # Do the easy (loading thumbnails) part first
         for index, path in imgs:
             if path in self.cached_thumbs:
                 self.thumbnail_ready.emit(index, batch,
@@ -198,9 +197,11 @@ class ImageLoader(QtCore.QObject):
             thumb_path = self.cache_path / (m.hexdigest() + '.png')
             if not thumb_path.is_file():
                 success = generate_thumbnail(thumb_path, path, uri)
-                icon = QtGui.QIcon(str(thumb_path)) if success else self.fail_icon
                 if success:
+                    icon = QtGui.QIcon(str(thumb_path))
                     self.cached_thumbs[path] = icon
+                else:
+                    icon = self.fail_icon
                 self.thumbnail_ready.emit(index, batch, icon)
             else:
                 icon = QtGui.QIcon(str(thumb_path))
@@ -216,8 +217,9 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         # Settings
         self.setWindowTitle('tistel')
-        QtWidgets.QShortcut(QtGui.QKeySequence('Escape'), self
-                            ).activated.connect(self.close)
+        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Escape'),
+                                             self).activated
+             ).connect(self.close)
         self.config = config
         self.paths = {Path(p).expanduser() for p in config['directories']}
 
@@ -228,7 +230,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Left column - tags/files/dates and info
         self.left_column = LeftColumn(self)
         splitter.addWidget(self.left_column)
-        # splitter.setStretchFactor(0, 1)
 
         # Middle column - thumbnails
         default_thumb = QtGui.QPixmap(192, 128)
@@ -236,8 +237,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.default_icon = QtGui.QIcon(default_thumb)
 
         self.thumb_loader_thread = QtCore.QThread()
-        QtWidgets.QApplication.instance().aboutToQuit.connect(
-                self.thumb_loader_thread.quit)
+        cast(QtCore.pyqtSignal, QtWidgets.QApplication.instance().aboutToQuit
+             ).connect(self.thumb_loader_thread.quit)
         self.thumb_loader = ImageLoader()
         self.thumb_loader.moveToThread(self.thumb_loader_thread)
         self.image_queued.connect(self.thumb_loader.load_image)
@@ -262,17 +263,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.image_view = ImagePreview(splitter)
         self.image_view.setStyleSheet('background: black; color: white')
 
-        def load_big_image(current, prev):
+        def load_big_image(current: QtWidgets.QListWidgetItem,
+                           prev: QtWidgets.QListWidgetItem) -> None:
             self.image_view.setPixmap(QtGui.QPixmap(str(current.data(PATH))))
 
-        self.thumb_view.currentItemChanged.connect(load_big_image)
+        cast(QtCore.pyqtSignal, self.thumb_view.currentItemChanged
+             ).connect(load_big_image)
         splitter.addWidget(self.image_view)
         splitter.setStretchFactor(2, 1)
 
         # Settings dialog
         self.settings_dialog = SettingsWindow(self, self.paths)
 
-        def show_settings_window():
+        def show_settings_window() -> None:
             self.settings_dialog.paths = self.paths.copy()
             result = self.settings_dialog.exec_()
             if result == QtWidgets.QDialog.Accepted:
@@ -280,8 +283,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.config['directories'] = [str(p) for p in self.paths]
                 CONFIG.write_text(json.dumps(self.config, indent=2))
 
-        self.left_column.settings_button.clicked.connect(
-            show_settings_window)
+        cast(QtCore.pyqtSignal, self.left_column.settings_button.clicked
+             ).connect(show_settings_window)
 
         # Finalize
         self.batch = 0
@@ -293,7 +296,7 @@ class MainWindow(QtWidgets.QMainWindow):
         whitelist = set()
         blacklist = set()
         untagged_state = TagState.DEFAULT
-        tag_count = Counter()
+        tag_count: typing.Counter[str] = Counter()
         for i in range(self.left_column.tag_list.count()):
             tag_item = self.left_column.tag_list.item(i)
             state = tag_item.data(TAGSTATE)
@@ -331,7 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.batch += 1
         imgs = []
         cache = json.loads(CACHE.read_text())
-        tag_count = Counter()
+        tag_count: typing.Counter[str] = Counter()
         root_paths = [str(p) for p in self.paths]
         n = 0
         untagged = 0
@@ -383,7 +386,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     and stat.st_size == cached_images[path_str]['size']:
                 continue
             try:
-                tags, (width, height) = extract_metadata(path_str)
+                tags, (width, height) = extract_metadata(path)
             except OSError:
                 continue
             cached_images[path_str] = {
@@ -398,7 +401,7 @@ class MainWindow(QtWidgets.QMainWindow):
             CACHE.parent.mkdir(parents=True)
         CACHE.write_text(json.dumps(cache))
 
-    def add_thumbnail(self, index, batch, icon):
+    def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
         if batch != self.batch:
             return
         item = self.thumb_view.item(index)
@@ -462,7 +465,7 @@ class LeftColumn(QtWidgets.QWidget):
             item.setData(VISIBLE_TAGS, new_count)
             item.setText(f'{tag or "Untagged"} '
                          f'({new_count}/{item.data(TAGS)})')
-            item.update_looks()
+            update_looks(item)
 
 
 class ImagePreview(QtWidgets.QLabel):
@@ -492,6 +495,8 @@ class ImagePreview(QtWidgets.QLabel):
         total_width, total_height = self.width(), self.height()
         total_ratio = total_width / total_height
         ratio = width / height
+        new_height: float
+        new_width: float
         # if height is the biggest
         if ratio < total_ratio:
             new_height = total_height
@@ -500,7 +505,7 @@ class ImagePreview(QtWidgets.QLabel):
         else:
             new_width = total_width
             new_height = height / width * new_width
-        return QtCore.QSize(new_width, new_height)
+        return QtCore.QSize(int(new_width), int(new_height))
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
@@ -534,20 +539,21 @@ class ImagePreview(QtWidgets.QLabel):
         self.update()
 
     def new_frame(self, frame: QtGui.QPixmap) -> None:
-        self.current_frame = self.animation.currentPixmap()
-        self.update()
+        if self.animation is not None:
+            self.current_frame = self.animation.currentPixmap()
+            self.update()
 
     def set_animation(self, animation: QtGui.QMovie) -> None:
         self.image = None
         self.fail = False
         self.animation = animation
-        self.animation.frameChanged.connect(self.new_frame)
+        cast(pyqtSignal, self.animation.frameChanged).connect(self.new_frame)
         self.animation.start()
         self.animation_size = self.animation.currentImage().size()
         self.update_animation_size()
 
     def update_animation_size(self) -> None:
-        if self.animation_size is not None:
+        if self.animation_size is not None and self.animation is not None:
             size = self.resize_keep_ratio(self.animation_size)
             self.animation.setScaledSize(size)
             self.update()
@@ -559,12 +565,13 @@ class ImagePreview(QtWidgets.QLabel):
         self.update_image_size()
 
     def update_image_size(self) -> None:
-        self.current_frame = self.image.scaled(
-            self.size(),
-            aspectRatioMode=Qt.KeepAspectRatio,
-            transformMode=QtCore.Qt.SmoothTransformation
-        )
-        self.update()
+        if self.image is not None:
+            self.current_frame = self.image.scaled(
+                self.size(),
+                aspectRatioMode=Qt.KeepAspectRatio,
+                transformMode=QtCore.Qt.SmoothTransformation
+            )
+            self.update()
 
 
 class SettingsWindow(QtWidgets.QDialog):
@@ -578,11 +585,12 @@ class SettingsWindow(QtWidgets.QDialog):
         # Directory buttons
         hbox = QtWidgets.QHBoxLayout()
         self.add_button = QtWidgets.QPushButton('Add directory...', self)
-        self.add_button.clicked.connect(self.add_directory)
+        cast(pyqtSignal, self.add_button.clicked).connect(self.add_directory)
         hbox.addWidget(self.add_button)
         self.remove_button = QtWidgets.QPushButton('Remove directory', self)
         self.remove_button.setEnabled(False)
-        self.remove_button.clicked.connect(self.remove_directories)
+        cast(pyqtSignal, self.remove_button.clicked
+             ).connect(self.remove_directories)
         hbox.addWidget(self.remove_button)
         layout.addLayout(hbox)
         # Path list
@@ -596,18 +604,19 @@ class SettingsWindow(QtWidgets.QDialog):
         layout.addSpacing(10)
         btm_hbox = QtWidgets.QHBoxLayout()
         self.cancel_button = QtWidgets.QPushButton('Cancel', self)
-        self.cancel_button.clicked.connect(self.reject)
+        cast(pyqtSignal, self.cancel_button.clicked).connect(self.reject)
         btm_hbox.addWidget(self.cancel_button)
         btm_hbox.addStretch()
         self.save_button = QtWidgets.QPushButton('Save', self)
-        self.save_button.clicked.connect(self.accept)
+        cast(pyqtSignal, self.save_button.clicked).connect(self.accept)
         btm_hbox.addWidget(self.save_button)
         layout.addLayout(btm_hbox)
 
         def on_selection_change() -> None:
             self.remove_button.setEnabled(
                 bool(self.path_list.selectedItems()))
-        self.path_list.itemSelectionChanged.connect(on_selection_change)
+        cast(pyqtSignal, self.path_list.itemSelectionChanged
+             ).connect(on_selection_change)
 
     @property
     def paths(self) -> Set[Path]:
