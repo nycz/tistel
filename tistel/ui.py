@@ -124,7 +124,7 @@ def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
 def png_text_chunk(name: bytes, text: bytes) -> bytes:
     header_and_data = b'tEXt%s\x00%s' % (name, text)
     length = struct.pack('>I', len(header_and_data) - 4)
-    crc_bytes = zlib.crc32(header_and_data)
+    crc_bytes = struct.pack('>I', zlib.crc32(header_and_data))
     return length + header_and_data + crc_bytes
 
 
@@ -198,7 +198,7 @@ class ImageLoader(QtCore.QObject):
             thumb_path = self.cache_path / (m.hexdigest() + '.png')
             if not thumb_path.is_file():
                 success = generate_thumbnail(thumb_path, path, uri)
-                icon = QtGui.QIcon(thumb_path) if success else self.fail_icon
+                icon = QtGui.QIcon(str(thumb_path)) if success else self.fail_icon
                 if success:
                     self.cached_thumbs[path] = icon
                 self.thumbnail_ready.emit(index, batch, icon)
@@ -219,7 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QShortcut(QtGui.QKeySequence('Escape'), self
                             ).activated.connect(self.close)
         self.config = config
-        self.paths = [Path(p).expanduser() for p in config['directories']]
+        self.paths = {Path(p).expanduser() for p in config['directories']}
 
         # Main layout
         splitter = QtWidgets.QSplitter(self)
@@ -271,8 +271,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Settings dialog
         self.settings_dialog = SettingsWindow(self, self.paths)
+
+        def show_settings_window():
+            self.settings_dialog.paths = self.paths.copy()
+            result = self.settings_dialog.exec_()
+            if result == QtWidgets.QDialog.Accepted:
+                self.paths = self.settings_dialog.paths
+                self.config['directories'] = [str(p) for p in self.paths]
+                CONFIG.write_text(json.dumps(self.config, indent=2))
+
         self.left_column.settings_button.clicked.connect(
-            self.settings_dialog.exec_)
+            show_settings_window)
 
         # Finalize
         self.batch = 0
@@ -283,26 +292,36 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_tag_filter(self) -> None:
         whitelist = set()
         blacklist = set()
+        untagged_state = TagState.DEFAULT
         tag_count = Counter()
         for i in range(self.left_column.tag_list.count()):
             tag_item = self.left_column.tag_list.item(i)
             state = tag_item.data(TAGSTATE)
             tag = tag_item.data(PATH)
-            if state == TagState.WHITELISTED:
+            if tag == '':
+                untagged_state = state
+            elif state == TagState.WHITELISTED:
                 whitelist.add(tag)
             elif state == TagState.BLACKLISTED:
                 blacklist.add(tag)
+        untagged = 0
         for i in range(self.thumb_view.count()):
             item = self.thumb_view.item(i)
             tags = item.data(TAGS)
-            if (whitelist and not whitelist.issubset(tags)) \
+            if (untagged_state == TagState.WHITELISTED and tags) \
+                    or (untagged_state == TagState.BLACKLISTED and not tags) \
+                    or (whitelist and not whitelist.issubset(tags)) \
                     or (blacklist and not blacklist.isdisjoint(tags)):
                 if not item.isHidden():
                     item.setHidden(True)
             else:
-                tag_count.update(tags)
+                if not tags:
+                    untagged += 1
+                else:
+                    tag_count.update(tags)
                 if item.isHidden():
                     item.setHidden(False)
+        tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
 
     def load_index(self) -> None:
@@ -315,6 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tag_count = Counter()
         root_paths = [str(p) for p in self.paths]
         n = 0
+        untagged = 0
         for raw_path, data in sorted(cache['images'].items()):
             path = Path(raw_path)
             if not path.exists():
@@ -333,10 +353,12 @@ class MainWindow(QtWidgets.QMainWindow):
             imgs.append((n, path))
             n += 1
             tag_count.update(data['tags'])
+            if not data['tags']:
+                untagged += 1
         if self.thumb_view.currentItem() is None:
             self.thumb_view.setCurrentRow(0)
         self.image_queued.emit(self.batch, imgs)
-        self.tags = []
+        self.tags = [('', untagged)]
         for tag, count in tag_count.most_common():
             self.tags.append((tag, count))
         self.left_column.set_tags(self.tags)
@@ -424,7 +446,7 @@ class LeftColumn(QtWidgets.QWidget):
     def set_tags(self, tags: List[Tuple[str, int]]) -> None:
         self.tag_list.clear()
         for tag, count in tags:
-            item = TagListWidgetItem(f'{tag} ({count})')
+            item = TagListWidgetItem(f'{tag or "Untagged"} ({count})')
             item.setData(PATH, tag)
             item.setData(TAGS, count)
             item.setData(VISIBLE_TAGS, count)
@@ -438,7 +460,8 @@ class LeftColumn(QtWidgets.QWidget):
             tag = item.data(PATH)
             new_count = tag_count[tag]
             item.setData(VISIBLE_TAGS, new_count)
-            item.setText(f'{tag} ({new_count}/{item.data(TAGS)})')
+            item.setText(f'{tag or "Untagged"} '
+                         f'({new_count}/{item.data(TAGS)})')
             item.update_looks()
 
 
@@ -545,32 +568,71 @@ class ImagePreview(QtWidgets.QLabel):
 
 
 class SettingsWindow(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget, paths: List[Path]) -> None:
+    def __init__(self, parent: QtWidgets.QWidget,
+                 paths: Iterable[Path]) -> None:
         super().__init__(parent)
-        self.paths = paths
         self.setWindowTitle('Settings')
         # Layout
-        layout = QtWidgets.QVBoxLayout(self)
         self.heading_label = QtWidgets.QLabel('Image directories')
-        layout.addWidget(self.heading_label)
-        for path in paths:
-            hbox = QtWidgets.QHBoxLayout()
-            btn = QtWidgets.QPushButton('-', self)
-            hbox.addWidget(btn)
-            lbl = QtWidgets.QLabel(str(path), self)
-            hbox.addWidget(lbl)
-            layout.addLayout(hbox)
-
+        layout = QtWidgets.QVBoxLayout(self)
+        # Directory buttons
+        hbox = QtWidgets.QHBoxLayout()
         self.add_button = QtWidgets.QPushButton('Add directory...', self)
         self.add_button.clicked.connect(self.add_directory)
-        layout.addWidget(self.add_button)
+        hbox.addWidget(self.add_button)
+        self.remove_button = QtWidgets.QPushButton('Remove directory', self)
+        self.remove_button.setEnabled(False)
+        self.remove_button.clicked.connect(self.remove_directories)
+        hbox.addWidget(self.remove_button)
+        layout.addLayout(hbox)
+        # Path list
+        self.path_list = QtWidgets.QListWidget(self)
+        self.path_list.setSortingEnabled(True)
+        self.path_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.paths = paths
+        layout.addWidget(self.path_list)
+        # Action buttons
+        layout.addSpacing(10)
+        btm_hbox = QtWidgets.QHBoxLayout()
+        self.cancel_button = QtWidgets.QPushButton('Cancel', self)
+        self.cancel_button.clicked.connect(self.reject)
+        btm_hbox.addWidget(self.cancel_button)
+        btm_hbox.addStretch()
+        self.save_button = QtWidgets.QPushButton('Save', self)
+        self.save_button.clicked.connect(self.accept)
+        btm_hbox.addWidget(self.save_button)
+        layout.addLayout(btm_hbox)
 
-    def add_directory(self) -> str:
+        def on_selection_change() -> None:
+            self.remove_button.setEnabled(
+                bool(self.path_list.selectedItems()))
+        self.path_list.itemSelectionChanged.connect(on_selection_change)
+
+    @property
+    def paths(self) -> Set[Path]:
+        out = set()
+        for i in range(self.path_list.count()):
+            out.add(Path(self.path_list.item(i).text()))
+        return out
+
+    @paths.setter
+    def paths(self, paths: Iterable[Path]) -> None:
+        self.path_list.clear()
+        self.path_list.addItems(sorted(str(p) for p in paths))
+
+    def add_directory(self) -> None:
         roots = QtCore.QStandardPaths.standardLocations(
             QtCore.QStandardPaths.PicturesLocation)
         root = roots[0] if roots else str(Path.home())
-        return QtWidgets.QFileDialog.getExistingDirectory(
+        new_dir = QtWidgets.QFileDialog.getExistingDirectory(
             self, 'Choose a directory', root)
+        if new_dir:
+            self.path_list.addItem(new_dir)
+
+    def remove_directories(self) -> None:
+        for item in self.path_list.selectedItems():
+            self.path_list.takeItem(self.path_list.row(item))
 
 
 def main() -> int:
