@@ -359,6 +359,7 @@ class MainWindow(QtWidgets.QWidget):
              ).connect(self.close)
         self.config = config
         self.paths = {Path(p).expanduser() for p in config['directories']}
+        self.tag_count: typing.Counter[str] = Counter()
 
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -396,6 +397,8 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_view.setMovement(QtWidgets.QListWidget.Static)
         self.thumb_view.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.thumb_view.setObjectName('thumb_view')
+        self.thumb_view.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection)
 
         splitter.addWidget(self.thumb_view)
         splitter.setStretchFactor(1, 2)
@@ -437,6 +440,21 @@ class MainWindow(QtWidgets.QWidget):
         cast(pyqtSignal, self.left_column.settings_button.clicked
              ).connect(show_settings_window)
 
+        # Tagging dialog
+        self.tagging_dialog = TaggingWindow(self)
+
+        def show_tagging_dialog() -> None:
+            self.tagging_dialog.set_up(self.tag_count,
+                                       self.thumb_view.selectedItems())
+            result = self.tagging_dialog.exec_()
+            if result:
+                pass
+                # TODO: actually tag the images
+
+        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
+                                             self).activated
+             ).connect(show_tagging_dialog)
+
         # Reloading
         self.indexer = Indexer()
         self.indexer_thread = QtCore.QThread()
@@ -474,7 +492,7 @@ class MainWindow(QtWidgets.QWidget):
         self.batch += 1
         imgs = []
         cache = json.loads(CACHE.read_text())
-        tag_count: typing.Counter[str] = Counter()
+        self.tag_count.clear()
         root_paths = [str(p) for p in self.paths]
         n = 0
         untagged = 0
@@ -497,14 +515,14 @@ class MainWindow(QtWidgets.QWidget):
             item.setData(DIMENSIONS, (data['w'], data['h']))
             imgs.append((n, skip_cache, path))
             n += 1
-            tag_count.update(data['tags'])
+            self.tag_count.update(data['tags'])
             if not data['tags']:
                 untagged += 1
         if self.thumb_view.currentItem() is None:
             self.thumb_view.setCurrentRow(0)
         self.image_queued.emit(self.batch, imgs)
         self.tags = [('', untagged)]
-        for tag, count in tag_count.most_common():
+        for tag, count in self.tag_count.most_common():
             self.tags.append((tag, count))
         self.left_column.set_tags(self.tags)
         total = self.thumb_view.count()
@@ -560,6 +578,87 @@ class MainWindow(QtWidgets.QWidget):
                     item.setHidden(False)
         tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
+
+
+class TaggingWindow(QtWidgets.QDialog):
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.images: List[QtWidgets.QListWidgetItem] = []
+
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        self.heading_label = QtWidgets.QLabel('Change tags')
+        self.heading_label.setObjectName('dialog_heading')
+        layout.addWidget(self.heading_label)
+
+        # Input
+        input_box = QtWidgets.QHBoxLayout()
+        self.tag_input = QtWidgets.QLineEdit(self)
+        input_box.addWidget(self.tag_input)
+        self.add_tag_button = QtWidgets.QPushButton('Add tag', self)
+        input_box.addWidget(self.add_tag_button)
+        layout.addLayout(input_box)
+
+        def update_add_button(text: str) -> None:
+            tags = {self.tag_list.item(i).data(PATH)
+                    for i in range(self.tag_list.count())}
+            tag = text.strip()
+            self.add_tag_button.setEnabled(bool(tag) and tag not in tags)
+
+        cast(pyqtSignal, self.tag_input.textChanged).connect(update_add_button)
+        cast(pyqtSignal, self.tag_input.returnPressed).connect(self.add_tag)
+        cast(pyqtSignal, self.add_tag_button.clicked).connect(self.add_tag)
+
+        # Tag list
+        self.tag_list = QtWidgets.QListWidget(self)
+        layout.addWidget(self.tag_list)
+
+        # Buttons
+        button_box = QDialogButtonBox(self)
+        button_box.addButton(QDialogButtonBox.Cancel)
+        self.accept_button = button_box.addButton('Apply to images',
+                                                  QDialogButtonBox.AcceptRole)
+        cast(pyqtSignal, button_box.accepted).connect(self.accept)
+        cast(pyqtSignal, button_box.rejected).connect(self.reject)
+        layout.addWidget(button_box)
+
+    def add_tag(self) -> None:
+        if not self.add_tag_button.isEnabled():
+            return
+        tag = self.tag_input.text().strip()
+        if tag:
+            tags = {self.tag_list.item(i).data(PATH)
+                    for i in range(self.tag_list.count())}
+            if tag not in tags:
+                item = TagListWidgetItem(f'{tag} (NEW)')
+                item.setData(PATH, tag)
+                item.setData(TAGS, (0, 0))
+                item.setCheckState(Qt.Unchecked)
+                self.tag_list.insertItem(0, item)
+            self.tag_input.clear()
+
+    def set_up(self, tags: typing.Counter[str],
+               images: List[QtWidgets.QListWidgetItem]) -> None:
+        self.accept_button.setText(f'Apply to {len(images)} images')
+        self.tag_input.clear()
+        self.tag_list.clear()
+        tag_counter: typing.Counter[str] = Counter()
+        for img in images:
+            img_tags = img.data(TAGS)
+            tag_counter.update(img_tags)
+        for tag, total in tags.items():
+            count = tag_counter.get(tag, 0)
+            item = TagListWidgetItem(f'{tag} ({count}/{total})')
+            item.setData(PATH, tag)
+            item.setData(TAGS, (count, total))
+            if count == len(images):
+                item.setCheckState(Qt.Checked)
+            elif count == 0:
+                item.setCheckState(Qt.Unchecked)
+            else:
+                item.setCheckState(Qt.PartiallyChecked)
+            self.tag_list.addItem(item)
+        self.tag_list.sortItems(Qt.DescendingOrder)
 
 
 class LeftColumn(QtWidgets.QWidget):
