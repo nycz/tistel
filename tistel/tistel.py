@@ -16,6 +16,7 @@ import zlib
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtProperty, pyqtSignal, Qt
 from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import QDialogButtonBox
 
 from jfti import jfti
 
@@ -61,7 +62,7 @@ class TagListWidget(QtWidgets.QListWidget):
     def default_color(self) -> QColor:
         return self._default_color
 
-    @default_color.setter
+    @default_color.setter  # type: ignore
     def default_color(self, color: QColor) -> None:
         self._default_color = color
 
@@ -69,7 +70,7 @@ class TagListWidget(QtWidgets.QListWidget):
     def whitelisted_color(self) -> QColor:
         return self._whitelisted_color
 
-    @whitelisted_color.setter
+    @whitelisted_color.setter  # type: ignore
     def whitelisted_color(self, color: QColor) -> None:
         self._whitelisted_color = color
 
@@ -77,7 +78,7 @@ class TagListWidget(QtWidgets.QListWidget):
     def blacklisted_color(self) -> QColor:
         return self._blacklisted_color
 
-    @blacklisted_color.setter
+    @blacklisted_color.setter  # type: ignore
     def blacklisted_color(self, color: QColor) -> None:
         self._blacklisted_color = color
 
@@ -235,7 +236,8 @@ class ImageLoader(QtCore.QObject):
         painter.end()
         return QtGui.QIcon(QtGui.QPixmap.fromImage(img))
 
-    def load_image(self, batch: int, imgs: Iterable[Tuple[int, bool, Path]]) -> None:
+    def load_image(self, batch: int,
+                   imgs: Iterable[Tuple[int, bool, Path]]) -> None:
         for index, skip_cache, path in imgs:
             if not skip_cache and path in self.cached_thumbs:
                 self.thumbnail_ready.emit(index, batch,
@@ -731,7 +733,7 @@ class ImagePreview(QtWidgets.QLabel):
             self.animation.setScaledSize(size)
             self.update()
 
-    def setPixmap(self, image: QtGui.QPixmap) -> None:
+    def setPixmap(self, image: Optional[QtGui.QPixmap]) -> None:
         self.image = image
         self.fail = False
         self.animation = None
@@ -755,8 +757,10 @@ class SettingsWindow(QtWidgets.QDialog):
         self.reset_thumbnails = False
 
         # Layout
-        self.heading_label = QtWidgets.QLabel('Image directories')
         layout = QtWidgets.QVBoxLayout(self)
+        self.heading_label = QtWidgets.QLabel('Image directories')
+        self.heading_label.setObjectName('dialog_heading')
+        layout.addWidget(self.heading_label)
 
         # Directory buttons
         hbox = QtWidgets.QHBoxLayout()
@@ -807,15 +811,11 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # Action buttons
         layout.addSpacing(10)
-        btm_hbox = QtWidgets.QHBoxLayout()
-        self.cancel_button = QtWidgets.QPushButton('Cancel', self)
-        cast(pyqtSignal, self.cancel_button.clicked).connect(self.reject)
-        btm_hbox.addWidget(self.cancel_button)
-        btm_hbox.addStretch()
-        self.save_button = QtWidgets.QPushButton('Save', self)
-        cast(pyqtSignal, self.save_button.clicked).connect(self.accept)
-        btm_hbox.addWidget(self.save_button)
-        layout.addLayout(btm_hbox)
+        btm_buttons = QDialogButtonBox(QDialogButtonBox.Cancel
+                                       | QDialogButtonBox.Save)
+        layout.addWidget(btm_buttons)
+        cast(pyqtSignal, btm_buttons.accepted).connect(self.accept)
+        cast(pyqtSignal, btm_buttons.rejected).connect(self.reject)
 
         def on_selection_change() -> None:
             self.remove_button.setEnabled(
