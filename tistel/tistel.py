@@ -412,14 +412,32 @@ class MainWindow(QtWidgets.QWidget):
 
         def load_big_image(current: QtWidgets.QListWidgetItem,
                            prev: QtWidgets.QListWidgetItem) -> None:
-            if current:
-                self.image_view.setPixmap(QtGui.QPixmap(str(current.data(PATH))))
+            if current and not current.isHidden():
+                self.image_view.setPixmap(
+                    QtGui.QPixmap(str(current.data(PATH))))
                 self.left_column.set_info(current)
             else:
                 self.image_view.setPixmap(None)
+                self.left_column.set_info(None)
 
-        cast(QtCore.pyqtSignal, self.thumb_view.currentItemChanged
+        cast(pyqtSignal, self.thumb_view.currentItemChanged
              ).connect(load_big_image)
+
+        def change_image(diff: int) -> None:
+            current = max(self.thumb_view.currentRow(), 0)
+            total = self.thumb_view.count()
+            i = current
+            item = self.thumb_view.item
+            for _ in range(total + 1):
+                i = (i + diff) % total
+                if not item(i).isHidden():
+                    self.thumb_view.setCurrentRow(i)
+                    return
+                elif current == i:
+                    self.image_view.setPixmap(None)
+                    return
+
+        cast(pyqtSignal, self.image_view.change_image).connect(change_image)
         splitter.addWidget(self.image_view)
         splitter.setStretchFactor(2, 1)
 
@@ -578,6 +596,15 @@ class MainWindow(QtWidgets.QWidget):
                     item.setHidden(False)
         tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
+        # Set the current row to the first visible item
+        item = self.thumb_view.item
+        for i in range(self.thumb_view.count()):
+            if not item(i).isHidden():
+                self.thumb_view.setCurrentRow(i)
+                break
+        else:
+            self.thumb_view.setCurrentRow(-1)
+            self.image_view.setPixmap(None)
 
 
 class TaggingWindow(QtWidgets.QDialog):
@@ -708,13 +735,21 @@ class LeftColumn(QtWidgets.QWidget):
         bottom_row.addWidget(self.reload_button)
         layout.addLayout(bottom_row)
 
-    def set_info(self, item: QtWidgets.QListWidgetItem) -> None:
-        tags = item.data(TAGS)
-        path = item.data(PATH)
-        width, height = item.data(DIMENSIONS)
-        self.info_path.setText(str(path))
-        self.info_tags.setText(', '.join(sorted(tags)))
-        self.info_dimensions.setText(f'{width} x {height}')
+    def set_info(self, item: Optional[QtWidgets.QListWidgetItem]) -> None:
+        if item is not None:
+            if self.info_box.isHidden():
+                self.info_box.show()
+            tags = item.data(TAGS)
+            path = item.data(PATH)
+            width, height = item.data(DIMENSIONS)
+            self.info_path.setText(str(path))
+            self.info_tags.setText(', '.join(sorted(tags)))
+            self.info_dimensions.setText(f'{width} x {height}')
+        else:
+            self.info_box.hide()
+            self.info_path.clear()
+            self.info_tags.clear()
+            self.info_dimensions.clear()
 
     @staticmethod
     def _tag_format(tag: str, visible: int, total: int) -> str:
@@ -752,6 +787,8 @@ class ImagePreview(QtWidgets.QLabel):
         self.animation: Optional[QtGui.QMovie] = None
         self.animation_size: Optional[QtCore.QSize] = None
         self.current_frame: Optional[QtGui.QPixmap] = None
+        self.empty_image = QtGui.QPixmap(128, 128)
+        self.empty_image.fill(Qt.transparent)
 
     def sizeHint(self) -> QtCore.QSize:
         # TODO: dont hardcode this
@@ -833,7 +870,10 @@ class ImagePreview(QtWidgets.QLabel):
             self.update()
 
     def setPixmap(self, image: Optional[QtGui.QPixmap]) -> None:
-        self.image = image
+        if image is None:
+            self.image = self.empty_image
+        else:
+            self.image = image
         self.fail = False
         self.animation = None
         self.update_image_size()
