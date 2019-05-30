@@ -17,7 +17,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtProperty, pyqtSignal, Qt
 from PyQt5.QtGui import QColor
 
-import jfti
+from jfti import jfti
 
 PATH = Qt.UserRole
 DIMENSIONS = Qt.UserRole + 1
