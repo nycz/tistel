@@ -264,7 +264,7 @@ class ProgressBar(QtWidgets.QProgressBar):
         value = self.value()
         total = self.maximum()
         return (f'Reloading thumbnails: {value}/{total}'
-                f' ({value/total:.0%})')
+                f' ({value/max(total, 1):.0%})')
 
 
 class IndexerProgress(QtWidgets.QDialog):
@@ -505,9 +505,13 @@ class MainWindow(QtWidgets.QWidget):
         for tag, count in tag_count.most_common():
             self.tags.append((tag, count))
         self.left_column.set_tags(self.tags)
-        self.progress.setMaximum(self.thumb_view.count())
-        self.progress.setValue(0)
-        self.progress.show()
+        total = self.thumb_view.count()
+        if total > 0:
+            self.progress.setMaximum(total)
+            self.progress.setValue(0)
+            self.progress.show()
+        else:
+            self.progress.hide()
 
     def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
         if batch != self.batch:
