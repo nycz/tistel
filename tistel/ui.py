@@ -20,7 +20,7 @@ from PyQt5.QtGui import QColor
 import jfti
 
 PATH = Qt.UserRole
-DIMENSION = Qt.UserRole + 1
+DIMENSIONS = Qt.UserRole + 1
 FILESIZE = Qt.UserRole + 2
 TAGS = Qt.UserRole + 3
 TAGSTATE = Qt.UserRole + 4
@@ -29,6 +29,7 @@ DEFAULT_COLOR = Qt.UserRole + 6
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
+THUMBNAILS = Path.home() / '.thumbnails' / 'normal'
 LOCAL_PATH = Path(__file__).resolve().parent
 CSS_FILE = LOCAL_PATH / 'qt.css'
 
@@ -153,9 +154,10 @@ def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
     except Exception:
         print(path)
         raise
-    size = QtGui.QImage(str(path)).size()
+    size = jfti.dimensions(path)
+    # size = QtGui.QImage(str(path)).size()
     # TODO: maybe get size from jfti too?
-    return tags, (size.width(), size.height())
+    return tags, size  # (size.width(), size.height())
 
 
 def png_text_chunk(name: bytes, text: bytes) -> bytes:
@@ -191,7 +193,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     pixmap, img_format = try_to_load_image(image_path)
     if pixmap is None:
         return False
-    scaled_pixmap = pixmap.scaled(128, 128,
+    scaled_pixmap = pixmap.scaled(192, 128,
                                   aspectRatioMode=QtCore.Qt.KeepAspectRatio,
                                   transformMode=QtCore.Qt.SmoothTransformation)
     scaled_pixmap.save(buf, 'PNG')
@@ -218,12 +220,24 @@ class ImageLoader(QtCore.QObject):
         self.cache_path = Path.home() / '.thumbnails' / 'normal'
         fail_thumb = QtGui.QPixmap(192, 128)
         fail_thumb.fill(QtGui.QColor(QtCore.Qt.darkRed))
+        self.base_thumb = QtGui.QImage(192, 128, QtGui.QImage.Format_ARGB32)
+        self.base_thumb.fill(Qt.transparent)
         self.fail_icon = QtGui.QIcon(fail_thumb)
         self.cached_thumbs: Dict[Path, QtGui.QIcon] = {}
 
-    def load_image(self, batch: int, imgs: Iterable[Tuple[int, Path]]) -> None:
-        for index, path in imgs:
-            if path in self.cached_thumbs:
+    def make_thumb(self, path: Path) -> QtGui.QIcon:
+        img = self.base_thumb.copy()
+        thumb = QtGui.QImage(str(path))
+        painter = QtGui.QPainter(img)
+        painter.drawImage(int((img.width() - thumb.width()) / 2),
+                          int((img.height() - thumb.height()) / 2),
+                          thumb)
+        painter.end()
+        return QtGui.QIcon(QtGui.QPixmap.fromImage(img))
+
+    def load_image(self, batch: int, imgs: Iterable[Tuple[int, bool, Path]]) -> None:
+        for index, skip_cache, path in imgs:
+            if not skip_cache and path in self.cached_thumbs:
                 self.thumbnail_ready.emit(index, batch,
                                           self.cached_thumbs[path])
                 continue
@@ -231,22 +245,107 @@ class ImageLoader(QtCore.QObject):
             uri = b'file://' + quote(str(path)).encode()
             m.update(uri)
             thumb_path = self.cache_path / (m.hexdigest() + '.png')
-            if not thumb_path.is_file():
+            if skip_cache or not thumb_path.is_file():
                 success = generate_thumbnail(thumb_path, path, uri)
                 if success:
-                    icon = QtGui.QIcon(str(thumb_path))
+                    icon = self.make_thumb(thumb_path)
                     self.cached_thumbs[path] = icon
                 else:
                     icon = self.fail_icon
                 self.thumbnail_ready.emit(index, batch, icon)
             else:
-                icon = QtGui.QIcon(str(thumb_path))
+                icon = self.make_thumb(thumb_path)
                 self.cached_thumbs[path] = icon
                 self.thumbnail_ready.emit(index, batch, icon)
 
 
-class MainWindow(QtWidgets.QMainWindow):
-    image_queued = QtCore.pyqtSignal(int, list)
+class ProgressBar(QtWidgets.QProgressBar):
+    def text(self) -> str:
+        value = self.value()
+        total = self.maximum()
+        return (f'Reloading thumbnails: {value}/{total}'
+                f' ({value/total:.0%})')
+
+
+class IndexerProgress(QtWidgets.QDialog):
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        layout = QtWidgets.QVBoxLayout(self)
+        self.status_text = QtWidgets.QLabel(self)
+        layout.addWidget(self.status_text)
+        self.counter = QtWidgets.QLabel(self)
+        layout.addWidget(self.counter)
+        self.progress_bar = QtWidgets.QProgressBar(self)
+        layout.addWidget(self.progress_bar)
+
+    def update_status(self, text: str, current: int, total: int) -> None:
+        self.status_text.setText(text)
+        if current >= 0 and total >= 0:
+            if not self.progress_bar.isVisible():
+                self.progress_bar.show()
+            self.counter.setText(f'{current}/{total}')
+            self.progress_bar.setValue(current)
+            self.progress_bar.setMaximum(total)
+        elif current >= 0:
+            if self.progress_bar.isVisible():
+                self.progress_bar.hide()
+            self.counter.setText(str(current))
+
+
+class Indexer(QtCore.QObject):
+    status_report = pyqtSignal(str, int, int)
+    done = pyqtSignal()
+
+    def index_images(self, paths: Iterable[Path]) -> None:
+        if CACHE.exists():
+            self.status_report.emit('Loading cache', -1, -1)
+            cache = json.loads(CACHE.read_text())
+        else:
+            cache = {'updated': time.time(), 'images': {}}
+        cached_images = cache['images']
+        image_paths = []
+        count = 0
+        for root_path in paths:
+            for path in root_path.rglob('**/*'):
+                if path.suffix.lower() not in {'.png', '.jpg'}:
+                    continue
+                count += 1
+                self.status_report.emit('Searching for images', count, -1)
+                image_paths.append(path)
+        total = count
+        count = 0
+        for path in image_paths:
+            self.status_report.emit('Indexing image', count, total)
+            count += 1
+            path_str = str(path)
+            stat = path.stat()
+            if path_str in cached_images \
+                    and stat.st_mtime == cached_images[path_str]['mtime'] \
+                    and stat.st_size == cached_images[path_str]['size']:
+                continue
+            try:
+                tags, (width, height) = extract_metadata(path)
+            except OSError:
+                continue
+            cached_images[path_str] = {
+                'tags': tags,
+                'size': stat.st_size,
+                'w': width,
+                'h': height,
+                'mtime': stat.st_mtime,
+                'ctime': stat.st_ctime
+            }
+        if not CACHE.parent.exists():
+            CACHE.parent.mkdir(parents=True)
+        self.status_report.emit('Saving cache', -1, -1)
+        CACHE.write_text(json.dumps(cache))
+        self.done.emit()
+
+
+class MainWindow(QtWidgets.QWidget):
+    image_queued = pyqtSignal(int, list)
+    start_indexing = pyqtSignal(set)
 
     def __init__(self, config: Dict[str, Any],
                  activation_event: QtCore.pyqtSignal) -> None:
@@ -260,8 +359,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.paths = {Path(p).expanduser() for p in config['directories']}
 
         # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         splitter = QtWidgets.QSplitter(self)
-        self.setCentralWidget(splitter)
+        layout.addWidget(splitter)
+
+        # Statusbar
+        self.progress = ProgressBar(self)
+        self.progress.hide()
+        layout.addWidget(self.progress)
 
         # Left column - tags/files/dates and info
         self.left_column = LeftColumn(self)
@@ -281,10 +387,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thumb_loader.thumbnail_ready.connect(self.add_thumbnail)
         self.thumb_loader_thread.start()
         self.thumb_view = QtWidgets.QListWidget(splitter)
+        self.thumb_view.setUniformItemSizes(True)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setIconSize(QtCore.QSize(192, 128))
-        self.thumb_view.setGridSize(QtCore.QSize(192, 160))
-        self.thumb_view.setSpacing(10)
+        self.thumb_view.setGridSize(QtCore.QSize(210, 160))
         self.thumb_view.setMovement(QtWidgets.QListWidget.Static)
         self.thumb_view.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.thumb_view.setObjectName('thumb_view')
@@ -301,8 +407,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def load_big_image(current: QtWidgets.QListWidgetItem,
                            prev: QtWidgets.QListWidgetItem) -> None:
-            self.image_view.setPixmap(QtGui.QPixmap(str(current.data(PATH))))
-            self.left_column.set_info(current)
+            if current:
+                self.image_view.setPixmap(QtGui.QPixmap(str(current.data(PATH))))
+                self.left_column.set_info(current)
+            else:
+                self.image_view.setPixmap(None)
 
         cast(QtCore.pyqtSignal, self.thumb_view.currentItemChanged
              ).connect(load_big_image)
@@ -314,20 +423,102 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def show_settings_window() -> None:
             self.settings_dialog.paths = self.paths.copy()
+            self.settings_dialog.reset_thumbnails = False
             result = self.settings_dialog.exec_()
             if result == QtWidgets.QDialog.Accepted:
                 self.paths = self.settings_dialog.paths
                 self.config['directories'] = [str(p) for p in self.paths]
                 CONFIG.write_text(json.dumps(self.config, indent=2))
+                if self.settings_dialog.reset_thumbnails:
+                    self.load_index(True)
 
-        cast(QtCore.pyqtSignal, self.left_column.settings_button.clicked
+        cast(pyqtSignal, self.left_column.settings_button.clicked
              ).connect(show_settings_window)
+
+        # Reloading
+        self.indexer = Indexer()
+        self.indexer_thread = QtCore.QThread()
+        cast(QtCore.pyqtSignal, QtWidgets.QApplication.instance().aboutToQuit
+             ).connect(self.indexer_thread.quit)
+        self.indexer.moveToThread(self.indexer_thread)
+        self.indexer.done.connect(self.load_index)
+        self.start_indexing.connect(self.indexer.index_images)
+        self.indexer_thread.start()
+
+        self.indexer_progressbar = IndexerProgress(self)
+        self.indexer.status_report.connect(self.indexer_progressbar.update_status)
+
+        def reload_images() -> None:
+            self.index_images()
+
+        cast(pyqtSignal, self.left_column.reload_button.clicked
+             ).connect(reload_images)
 
         # Finalize
         self.batch = 0
-        self.index_images()
-        self.load_index()
+        self.thumbnails_done = 0
         self.show()
+        self.index_images()
+
+    def index_images(self) -> None:
+        self.start_indexing.emit(self.paths)
+        self.indexer_progressbar.show()
+
+    def load_index(self, skip_cache: bool = False) -> None:
+        self.indexer_progressbar.accept()
+        if not CACHE.exists():
+            return
+        self.thumb_view.clear()
+        self.batch += 1
+        imgs = []
+        cache = json.loads(CACHE.read_text())
+        tag_count: typing.Counter[str] = Counter()
+        root_paths = [str(p) for p in self.paths]
+        n = 0
+        untagged = 0
+        for raw_path, data in sorted(cache['images'].items()):
+            path = Path(raw_path)
+            if not path.exists():
+                del cache['images'][raw_path]
+                continue
+            for p in root_paths:
+                if raw_path.startswith(p):
+                    break
+            else:
+                continue
+            item = QtWidgets.QListWidgetItem(self.default_icon,
+                                             path.name)
+            item.setSizeHint(QtCore.QSize(192, 160))
+            self.thumb_view.addItem(item)
+            item.setData(PATH, path)
+            item.setData(TAGS, set(data['tags']))
+            item.setData(DIMENSIONS, (data['w'], data['h']))
+            imgs.append((n, skip_cache, path))
+            n += 1
+            tag_count.update(data['tags'])
+            if not data['tags']:
+                untagged += 1
+        if self.thumb_view.currentItem() is None:
+            self.thumb_view.setCurrentRow(0)
+        self.image_queued.emit(self.batch, imgs)
+        self.tags = [('', untagged)]
+        for tag, count in tag_count.most_common():
+            self.tags.append((tag, count))
+        self.left_column.set_tags(self.tags)
+        self.progress.setMaximum(self.thumb_view.count())
+        self.progress.setValue(0)
+        self.progress.show()
+
+    def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
+        if batch != self.batch:
+            return
+        item = self.thumb_view.item(index)
+        item.setIcon(icon)
+        done = self.progress.value() + 1
+        total = self.thumb_view.count()
+        self.progress.setValue(done)
+        if done == total:
+            self.progress.hide()
 
     def update_tag_filter(self) -> None:
         whitelist = set()
@@ -364,87 +555,6 @@ class MainWindow(QtWidgets.QMainWindow):
         tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
 
-    def load_index(self) -> None:
-        if not CACHE.exists():
-            return
-        self.thumb_view.clear()
-        self.batch += 1
-        imgs = []
-        cache = json.loads(CACHE.read_text())
-        tag_count: typing.Counter[str] = Counter()
-        root_paths = [str(p) for p in self.paths]
-        n = 0
-        untagged = 0
-        for raw_path, data in sorted(cache['images'].items()):
-            path = Path(raw_path)
-            if not path.exists():
-                del cache['images'][raw_path]
-                continue
-            for p in root_paths:
-                if raw_path.startswith(p):
-                    break
-            else:
-                continue
-            item = QtWidgets.QListWidgetItem(self.default_icon,
-                                             path.name)
-            self.thumb_view.addItem(item)
-            item.setData(PATH, path)
-            item.setData(TAGS, set(data['tags']))
-            imgs.append((n, path))
-            n += 1
-            tag_count.update(data['tags'])
-            if not data['tags']:
-                untagged += 1
-        if self.thumb_view.currentItem() is None:
-            self.thumb_view.setCurrentRow(0)
-        self.image_queued.emit(self.batch, imgs)
-        self.tags = [('', untagged)]
-        for tag, count in tag_count.most_common():
-            self.tags.append((tag, count))
-        self.left_column.set_tags(self.tags)
-
-    def index_images(self) -> None:
-        if CACHE.exists():
-            cache = json.loads(CACHE.read_text())
-        else:
-            cache = {'updated': time.time(), 'images': {}}
-        cached_images = cache['images']
-        image_paths = []
-        for root_path in self.paths:
-            for path in root_path.rglob('**/*'):
-                if path.suffix.lower() not in {'.png', '.jpg'}:
-                    continue
-                image_paths.append(path)
-        for path in image_paths:
-            path_str = str(path)
-            stat = path.stat()
-            if path_str in cached_images \
-                    and stat.st_mtime == cached_images[path_str]['mtime'] \
-                    and stat.st_size == cached_images[path_str]['size']:
-                continue
-            try:
-                tags, (width, height) = extract_metadata(path)
-            except OSError:
-                continue
-            cached_images[path_str] = {
-                'tags': tags,
-                'size': stat.st_size,
-                'w': width,
-                'h': height,
-                'mtime': stat.st_mtime,
-                'ctime': stat.st_ctime
-            }
-        if not CACHE.parent.exists():
-            CACHE.parent.mkdir(parents=True)
-        CACHE.write_text(json.dumps(cache))
-
-    def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
-        if batch != self.batch:
-            return
-        item = self.thumb_view.item(index)
-        item.setIcon(icon)
-        item.setSizeHint(QtCore.QSize(256, 160))
-
 
 class LeftColumn(QtWidgets.QWidget):
     tag_selected = QtCore.pyqtSignal(str)
@@ -478,21 +588,28 @@ class LeftColumn(QtWidgets.QWidget):
         self.info_tags = QtWidgets.QLabel(self.info_box)
         self.info_tags.setWordWrap(True)
         info_layout.addWidget(self.info_tags)
+        self.info_dimensions = QtWidgets.QLabel(self.info_box)
+        self.info_dimensions.setWordWrap(True)
+        info_layout.addWidget(self.info_dimensions)
         info_layout.addStretch()
         splitter.addWidget(self.info_box)
         splitter.setStretchFactor(1, 0)
 
-        # Settings button at the bottom
+        # Buttons at the bottom
         bottom_row = QtWidgets.QHBoxLayout()
         self.settings_button = QtWidgets.QPushButton('Settings', self)
         bottom_row.addWidget(self.settings_button)
+        self.reload_button = QtWidgets.QPushButton('Reload', self)
+        bottom_row.addWidget(self.reload_button)
         layout.addLayout(bottom_row)
 
     def set_info(self, item: QtWidgets.QListWidgetItem) -> None:
         tags = item.data(TAGS)
         path = item.data(PATH)
+        width, height = item.data(DIMENSIONS)
         self.info_path.setText(str(path))
         self.info_tags.setText(', '.join(sorted(tags)))
+        self.info_dimensions.setText(f'{width} x {height}')
 
     @staticmethod
     def _tag_format(tag: str, visible: int, total: int) -> str:
@@ -631,9 +748,12 @@ class SettingsWindow(QtWidgets.QDialog):
                  paths: Iterable[Path]) -> None:
         super().__init__(parent)
         self.setWindowTitle('Settings')
+        self.reset_thumbnails = False
+
         # Layout
         self.heading_label = QtWidgets.QLabel('Image directories')
         layout = QtWidgets.QVBoxLayout(self)
+
         # Directory buttons
         hbox = QtWidgets.QHBoxLayout()
         self.add_button = QtWidgets.QPushButton('Add directory...', self)
@@ -645,6 +765,7 @@ class SettingsWindow(QtWidgets.QDialog):
              ).connect(self.remove_directories)
         hbox.addWidget(self.remove_button)
         layout.addLayout(hbox)
+
         # Path list
         self.path_list = QtWidgets.QListWidget(self)
         self.path_list.setSortingEnabled(True)
@@ -652,6 +773,34 @@ class SettingsWindow(QtWidgets.QDialog):
             QtWidgets.QAbstractItemView.ExtendedSelection)
         self.paths = paths
         layout.addWidget(self.path_list)
+
+        # Clear cache (not thumbnails)
+        def clear_cache() -> None:
+            msg = ('Are you sure you want to remove the cache? This will not '
+                   'reset any thumbnails, only the file information.')
+            reply = QtWidgets.QMessageBox.question(self, 'Clear cache', msg)
+            if reply:
+                CACHE.unlink()
+
+        self.clear_cache_button = QtWidgets.QPushButton('Clear cache', self)
+        cast(pyqtSignal, self.clear_cache_button.clicked).connect(clear_cache)
+        layout.addWidget(self.clear_cache_button)
+
+        # Regenerate thumbnails
+        def regenerate_thumbnails() -> None:
+            msg = ('Are you sure you want to regenerate the thumbnails? '
+                   'Only the ones loaded right now will be affected.')
+            reply = QtWidgets.QMessageBox.question(
+                self, 'Regenerate thumbnails', msg)
+            if reply:
+                self.reset_thumbnails = True
+
+        self.regen_thumbnails_button = QtWidgets.QPushButton(
+            'Regenerate thumbnails', self)
+        cast(pyqtSignal, self.regen_thumbnails_button.clicked
+             ).connect(regenerate_thumbnails)
+        layout.addWidget(self.regen_thumbnails_button)
+
         # Action buttons
         layout.addSpacing(10)
         btm_hbox = QtWidgets.QHBoxLayout()

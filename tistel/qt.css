@@ -46,6 +46,16 @@ QSplitter::handle:vertical {
   height: 8px;
 }
 
+QProgressBar {
+  border: 0;
+  background: #000;
+  text-align: center;
+  color: white;
+}
+QProgressBar::chunk {
+  background: #444;
+}
+
 
 QScrollBar:vertical {
     background: #080808;
