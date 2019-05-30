@@ -14,7 +14,8 @@ from urllib.parse import quote
 import zlib
 
 from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import pyqtProperty, pyqtSignal, Qt
+from PyQt5.QtGui import QColor
 
 import jfti
 
@@ -24,10 +25,12 @@ FILESIZE = Qt.UserRole + 2
 TAGS = Qt.UserRole + 3
 TAGSTATE = Qt.UserRole + 4
 VISIBLE_TAGS = Qt.UserRole + 5
+DEFAULT_COLOR = Qt.UserRole + 6
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
-CSS_FILE = 'qt.css'
+LOCAL_PATH = Path(__file__).resolve().parent
+CSS_FILE = LOCAL_PATH / 'qt.css'
 
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
@@ -46,6 +49,36 @@ class TagListWidget(QtWidgets.QListWidget):
     tag_state_updated = QtCore.pyqtSignal()
     tag_blacklisted = QtCore.pyqtSignal(str)
     tag_whitelisted = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self._default_color = QColor(Qt.white)
+        self._whitelisted_color = QColor(Qt.green)
+        self._blacklisted_color = QColor(Qt.red)
+
+    @pyqtProperty(QColor)
+    def default_color(self) -> QColor:
+        return self._default_color
+
+    @default_color.setter
+    def default_color(self, color: QColor) -> None:
+        self._default_color = color
+
+    @pyqtProperty(QColor)
+    def whitelisted_color(self) -> QColor:
+        return self._whitelisted_color
+
+    @whitelisted_color.setter
+    def whitelisted_color(self, color: QColor) -> None:
+        self._whitelisted_color = color
+
+    @pyqtProperty(QColor)
+    def blacklisted_color(self) -> QColor:
+        return self._blacklisted_color
+
+    @blacklisted_color.setter
+    def blacklisted_color(self, color: QColor) -> None:
+        self._blacklisted_color = color
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         return
@@ -81,22 +114,25 @@ def update_looks(tag_item: QtWidgets.QListWidgetItem) -> None:
     count = tag_item.data(TAGS)
     visible_count = tag_item.data(VISIBLE_TAGS)
     state = tag_item.data(TAGSTATE)
-    colors = {TagState.WHITELISTED: Qt.darkGreen,
-              TagState.DEFAULT: Qt.black,
-              TagState.BLACKLISTED: Qt.darkRed}
-    color = QtGui.QColor(colors[state])
+    parent = tag_item.listWidget()
+    colors = {TagState.WHITELISTED: parent.property('whitelisted_color'),
+              TagState.DEFAULT: parent.property('default_color'),
+              TagState.BLACKLISTED: parent.property('blacklisted_color')}
+    color = colors[state]
+    font = tag_item.font()
     if (count == 0 or visible_count == 0) \
             and state != TagState.BLACKLISTED:
-        color.setAlphaF(0.3)
+        color.setAlphaF(0.4)
         if not tag_item.font().italic():
-            font = tag_item.font()
             font.setItalic(True)
-            tag_item.setFont(font)
     elif tag_item.font().italic():
-        font = tag_item.font()
         font.setItalic(False)
-        tag_item.setFont(font)
-    tag_item.setForeground(QtGui.QBrush(color))
+    if state != TagState.DEFAULT:
+        font.setBold(True)
+    elif font.bold():
+        font.setBold(False)
+    tag_item.setFont(font)
+    tag_item.setForeground(color)
 
 
 def read_config() -> Dict[str, Any]:
@@ -247,11 +283,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thumb_view = QtWidgets.QListWidget(splitter)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setIconSize(QtCore.QSize(192, 128))
-        self.thumb_view.setGridSize(QtCore.QSize(256, 160))
+        self.thumb_view.setGridSize(QtCore.QSize(192, 160))
         self.thumb_view.setSpacing(10)
         self.thumb_view.setMovement(QtWidgets.QListWidget.Static)
         self.thumb_view.setResizeMode(QtWidgets.QListWidget.Adjust)
-        self.thumb_view.setStyleSheet('background: black; color: white')
+        self.thumb_view.setObjectName('thumb_view')
 
         splitter.addWidget(self.thumb_view)
         splitter.setStretchFactor(1, 2)
@@ -261,11 +297,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Right column - big image
         self.image_view = ImagePreview(splitter)
-        self.image_view.setStyleSheet('background: black; color: white')
+        self.image_view.setObjectName('image_view')
 
         def load_big_image(current: QtWidgets.QListWidgetItem,
                            prev: QtWidgets.QListWidgetItem) -> None:
             self.image_view.setPixmap(QtGui.QPixmap(str(current.data(PATH))))
+            self.left_column.set_info(current)
 
         cast(QtCore.pyqtSignal, self.thumb_view.currentItemChanged
              ).connect(load_big_image)
@@ -415,30 +452,35 @@ class LeftColumn(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Tab bar
-        self.tab_bar = QtWidgets.QTabBar(self)
-        self.tab_bar.addTab('Tags')
-        self.tab_bar.addTab('Files')
-        self.tab_bar.addTab('Dates')
-        layout.addWidget(self.tab_bar)
-
-        # Splitter between stack and info
-        splitter = QtWidgets.QSplitter(self)
+        # Splitter between tabs and info
+        splitter = QtWidgets.QSplitter(Qt.Vertical, self)
         layout.addWidget(splitter)
 
-        # Stack widget (content controlled by the tab bar)
-        self.nav_stack = QtWidgets.QStackedWidget(splitter)
-        splitter.addWidget(self.nav_stack)
+        # Tab widget
+        self.tab_widget = QtWidgets.QTabWidget(self)
+        splitter.addWidget(self.tab_widget)
+        splitter.setStretchFactor(0, 1)
 
         # Tag list
-        self.tag_list = TagListWidget(self.nav_stack)
+        self.tag_list = TagListWidget(self.tab_widget)
+        self.tag_list.setObjectName('tag_list')
         self.tag_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.nav_stack.addWidget(self.tag_list)
+        self.tab_widget.addTab(self.tag_list, 'Tags')
 
         # Info widget
-        self.info_box = QtWidgets.QWidget(splitter)
+        self.info_box = QtWidgets.QWidget(self)
+        info_layout = QtWidgets.QVBoxLayout(self.info_box)
+        self.info_path = QtWidgets.QLabel(self.info_box)
+        self.info_path.setWordWrap(True)
+        info_layout.addWidget(self.info_path)
+        self.info_tags = QtWidgets.QLabel(self.info_box)
+        self.info_tags.setWordWrap(True)
+        info_layout.addWidget(self.info_tags)
+        info_layout.addStretch()
         splitter.addWidget(self.info_box)
+        splitter.setStretchFactor(1, 0)
 
         # Settings button at the bottom
         bottom_row = QtWidgets.QHBoxLayout()
@@ -446,15 +488,26 @@ class LeftColumn(QtWidgets.QWidget):
         bottom_row.addWidget(self.settings_button)
         layout.addLayout(bottom_row)
 
+    def set_info(self, item: QtWidgets.QListWidgetItem) -> None:
+        tags = item.data(TAGS)
+        path = item.data(PATH)
+        self.info_path.setText(str(path))
+        self.info_tags.setText(', '.join(sorted(tags)))
+
+    @staticmethod
+    def _tag_format(tag: str, visible: int, total: int) -> str:
+        return f'{tag or "<Untagged>"}   ({visible}/{total})'
+
     def set_tags(self, tags: List[Tuple[str, int]]) -> None:
         self.tag_list.clear()
         for tag, count in tags:
-            item = TagListWidgetItem(f'{tag or "Untagged"} ({count})')
+            item = TagListWidgetItem(self._tag_format(tag, count, count))
             item.setData(PATH, tag)
             item.setData(TAGS, count)
             item.setData(VISIBLE_TAGS, count)
             item.setData(TAGSTATE, TagState.DEFAULT)
             self.tag_list.addItem(item)
+            update_looks(item)
         self.tag_list.sortItems(Qt.DescendingOrder)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
@@ -463,8 +516,7 @@ class LeftColumn(QtWidgets.QWidget):
             tag = item.data(PATH)
             new_count = tag_count[tag]
             item.setData(VISIBLE_TAGS, new_count)
-            item.setText(f'{tag or "Untagged"} '
-                         f'({new_count}/{item.data(TAGS)})')
+            item.setText(self._tag_format(tag, new_count, item.data(TAGS)))
             update_looks(item)
 
 
@@ -662,6 +714,7 @@ def main() -> int:
             return False
     event_filter = AppEventFilter()
     app.installEventFilter(event_filter)
+    app.setStyleSheet(CSS_FILE.read_text())
 
     config = read_config()
     window = MainWindow(config, event_filter.activation_event)

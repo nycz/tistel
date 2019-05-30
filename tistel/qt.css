@@ -1,0 +1,64 @@
+#thumb_view, #image_view {
+  color: white;
+}
+
+#thumb_view {
+  background: #080808;
+}
+
+#image_view {
+  background: black;
+}
+#tag_list { 
+  background: #111;
+  font-size: 14px;
+  qproperty-default_color: #fff;
+  qproperty-whitelisted_color: #ada;
+  qproperty-blacklisted_color: #daa;
+}
+
+#tag_list::item {
+  background: #111;
+  padding: 3px;
+}
+
+#tag_list::item:checked {
+  color: green;
+}
+
+#tag_list::item:unchecked {
+  color: red;
+}
+
+
+QTabWidget::pane {
+  border: 0;
+}
+
+
+QSplitter::handle {
+  background: #555;
+}
+QSplitter::handle:horizontal {
+  width: 8px;
+}
+QSplitter::handle:vertical {
+  height: 8px;
+}
+
+
+QScrollBar:vertical {
+    background: #080808;
+    width: 15px;
+}
+QScrollBar::handle:vertical {
+    background: #666;
+    border-radius: 7px;
+    min-height: 20px;
+}
+QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
