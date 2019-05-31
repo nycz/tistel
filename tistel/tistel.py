@@ -153,12 +153,10 @@ def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
     try:
         tags = sorted(jfti.read_tags(path))
     except Exception:
-        print(path)
+        print(f'Getting metadata failed in: {path}')
         raise
     size = jfti.dimensions(path)
-    # size = QtGui.QImage(str(path)).size()
-    # TODO: maybe get size from jfti too?
-    return tags, size  # (size.width(), size.height())
+    return tags, size
 
 
 def png_text_chunk(name: bytes, text: bytes) -> bytes:
@@ -391,6 +389,7 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_loader_thread.start()
         self.thumb_view = QtWidgets.QListWidget(splitter)
         self.thumb_view.setUniformItemSizes(True)
+        self.thumb_view.setLayoutMode(QtWidgets.QListView.Batched)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setIconSize(QtCore.QSize(192, 128))
         self.thumb_view.setGridSize(QtCore.QSize(210, 160))
@@ -437,7 +436,7 @@ class MainWindow(QtWidgets.QWidget):
                     self.image_view.setPixmap(None)
                     return
 
-        cast(pyqtSignal, self.image_view.change_image).connect(change_image)
+        self.image_view.change_image.connect(change_image)
         splitter.addWidget(self.image_view)
         splitter.setStretchFactor(2, 1)
 
@@ -462,12 +461,66 @@ class MainWindow(QtWidgets.QWidget):
         self.tagging_dialog = TaggingWindow(self)
 
         def show_tagging_dialog() -> None:
-            self.tagging_dialog.set_up(self.tag_count,
-                                       self.thumb_view.selectedItems())
+            selected_items = self.thumb_view.selectedItems()
+            self.tagging_dialog.set_up(self.tag_count, selected_items)
             result = self.tagging_dialog.exec_()
             if result:
-                pass
-                # TODO: actually tag the images
+                new_tag_count: typing.Counter[str] = Counter()
+                updated_files = {}
+                tags_to_add = self.tagging_dialog.get_tags_to_add()
+                tags_to_remove = self.tagging_dialog.get_tags_to_remove()
+                created_tags = tags_to_add - set(self.tag_count.keys())
+                for item in selected_items:
+                    old_tags = item.data(TAGS)
+                    new_tags = (old_tags | tags_to_add) - tags_to_remove
+                    if old_tags != new_tags:
+                        added_tags = new_tags - old_tags
+                        removed_tags = old_tags - new_tags
+                        new_tag_count.update({t: 1 for t in added_tags})
+                        new_tag_count.update({t: -1 for t in removed_tags})
+                        path = item.data(PATH)
+                        jfti.set_tags(path, new_tags)
+                        item.setData(TAGS, new_tags)
+                        updated_files[item.data(PATH)] = new_tags
+                if updated_files:
+                    # Update the cache
+                    if not CACHE.exists():
+                        print('WARNING: no cache! probably reload ??')
+                        return
+                    cache = json.loads(CACHE.read_text())
+                    cache['updated'] = time.time()
+                    img_cache = cache['images']
+                    for fname, tags in updated_files.items():
+                        path_str = str(fname)
+                        if path_str not in img_cache:
+                            print('WARNING: img not in cache ??')
+                            continue
+                        img_cache[path_str]['tags'] = list(tags)
+                    CACHE.write_text(json.dumps(cache))
+                    # Update the tag list
+                    self.tag_count.update(new_tag_count)
+                    untagged_item = self.left_column.tag_list.takeItem(0)
+                    tag_items_to_delete = []
+                    for i in range(self.left_column.tag_list.count()):
+                        tag_item = self.left_column.tag_list.item(i)
+                        tag = tag_item.data(PATH)
+                        diff = new_tag_count.get(tag, 0)
+                        if diff != 0:
+                            new_count = tag_item.data(TAGS) + diff
+                            if new_count <= 0:
+                                tag_items_to_delete.append(i)
+                            tag_item.setData(TAGS, new_count)
+                    # Get rid of the items in reverse order
+                    # to not mess up the numbers
+                    for i in reversed(tag_items_to_delete):
+                        self.left_column.tag_list.takeItem(i)
+                    for tag in created_tags:
+                        count = new_tag_count.get(tag, 0)
+                        if count > 0:
+                            self.left_column.create_tag(tag, count)
+                    self.left_column.tag_list.sortItems(Qt.DescendingOrder)
+                    self.left_column.tag_list.insertItem(0, untagged_item)
+                    self.update_tag_filter()
 
         cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
                                              self).activated
@@ -486,11 +539,8 @@ class MainWindow(QtWidgets.QWidget):
         self.indexer_progressbar = IndexerProgress(self)
         self.indexer.status_report.connect(self.indexer_progressbar.update_status)
 
-        def reload_images() -> None:
-            self.index_images()
-
         cast(pyqtSignal, self.left_column.reload_button.clicked
-             ).connect(reload_images)
+             ).connect(self.index_images)
 
         # Finalize
         self.batch = 0
@@ -597,9 +647,9 @@ class MainWindow(QtWidgets.QWidget):
         tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
         # Set the current row to the first visible item
-        item = self.thumb_view.item
+        get_item = self.thumb_view.item
         for i in range(self.thumb_view.count()):
-            if not item(i).isHidden():
+            if not get_item(i).isHidden():
                 self.thumb_view.setCurrentRow(i)
                 break
         else:
@@ -610,7 +660,9 @@ class MainWindow(QtWidgets.QWidget):
 class TaggingWindow(QtWidgets.QDialog):
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
-        self.images: List[QtWidgets.QListWidgetItem] = []
+        self.original_tags: typing.Counter[str] = Counter()
+        self.tags_to_add: Set[str] = set()
+        self.tags_to_remove: Set[str] = set()
 
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -649,6 +701,26 @@ class TaggingWindow(QtWidgets.QDialog):
         cast(pyqtSignal, button_box.rejected).connect(self.reject)
         layout.addWidget(button_box)
 
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() != Qt.Key_Return:
+            super().keyPressEvent(event)
+
+    def get_tags_to_add(self) -> Set[str]:
+        out = set()
+        for i in range(self.tag_list.count()):
+            item = self.tag_list.item(i)
+            if item.checkState() == Qt.Checked:
+                out.add(item.data(PATH))
+        return out
+
+    def get_tags_to_remove(self) -> Set[str]:
+        out = set()
+        for i in range(self.tag_list.count()):
+            item = self.tag_list.item(i)
+            if item.checkState() == Qt.Unchecked:
+                out.add(item.data(PATH))
+        return out
+
     def add_tag(self) -> None:
         if not self.add_tag_button.isEnabled():
             return
@@ -660,12 +732,13 @@ class TaggingWindow(QtWidgets.QDialog):
                 item = TagListWidgetItem(f'{tag} (NEW)')
                 item.setData(PATH, tag)
                 item.setData(TAGS, (0, 0))
-                item.setCheckState(Qt.Unchecked)
+                item.setCheckState(Qt.Checked)
                 self.tag_list.insertItem(0, item)
             self.tag_input.clear()
 
     def set_up(self, tags: typing.Counter[str],
                images: List[QtWidgets.QListWidgetItem]) -> None:
+        self.original_tags = tags
         self.accept_button.setText(f'Apply to {len(images)} images')
         self.tag_input.clear()
         self.tag_list.clear()
@@ -686,6 +759,7 @@ class TaggingWindow(QtWidgets.QDialog):
                 item.setCheckState(Qt.PartiallyChecked)
             self.tag_list.addItem(item)
         self.tag_list.sortItems(Qt.DescendingOrder)
+        self.tag_input.setFocus()
 
 
 class LeftColumn(QtWidgets.QWidget):
@@ -755,16 +829,19 @@ class LeftColumn(QtWidgets.QWidget):
     def _tag_format(tag: str, visible: int, total: int) -> str:
         return f'{tag or "<Untagged>"}   ({visible}/{total})'
 
+    def create_tag(self, tag: str, count: int) -> None:
+        item = TagListWidgetItem(self._tag_format(tag, count, count))
+        item.setData(PATH, tag)
+        item.setData(TAGS, count)
+        item.setData(VISIBLE_TAGS, count)
+        item.setData(TAGSTATE, TagState.DEFAULT)
+        self.tag_list.addItem(item)
+        update_looks(item)
+
     def set_tags(self, tags: List[Tuple[str, int]]) -> None:
         self.tag_list.clear()
         for tag, count in tags:
-            item = TagListWidgetItem(self._tag_format(tag, count, count))
-            item.setData(PATH, tag)
-            item.setData(TAGS, count)
-            item.setData(VISIBLE_TAGS, count)
-            item.setData(TAGSTATE, TagState.DEFAULT)
-            self.tag_list.addItem(item)
-            update_looks(item)
+            self.create_tag(tag, count)
         self.tag_list.sortItems(Qt.DescendingOrder)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
