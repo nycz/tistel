@@ -460,6 +460,7 @@ class MainWindow(QtWidgets.QWidget):
         self.tagging_dialog = TaggingWindow(self)
 
         def show_tagging_dialog() -> None:
+            current_item = self.thumb_view.currentItem()
             selected_items = self.thumb_view.selectedItems()
             self.tagging_dialog.set_up(self.tag_count, selected_items)
             result = self.tagging_dialog.exec_()
@@ -530,6 +531,15 @@ class MainWindow(QtWidgets.QWidget):
                     self.left_column.tag_list.sortItems(Qt.DescendingOrder)
                     self.left_column.tag_list.insertItem(0, untagged_item)
                     self.update_tag_filter()
+                    # Go back to the same selected items as before (if visible)
+                    for item in self.thumb_view.selectedItems():
+                        if (item.isHidden() or item not in selected_items) \
+                                and item.isSelected():
+                            item.setSelected(False)
+                    for item in selected_items:
+                        if not item.isHidden() and not item.isSelected():
+                            item.setSelected(True)
+                    self.thumb_view.setCurrentItem(current_item)
 
         cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
                                              self).activated
