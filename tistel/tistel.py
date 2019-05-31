@@ -711,7 +711,10 @@ class TaggingWindow(QtWidgets.QDialog):
         layout.addWidget(button_box)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() != Qt.Key_Return:
+        if event.key() == Qt.Key_Return:
+            if event.modifiers() & Qt.ControlModifier:
+                self.accept()
+        else:
             super().keyPressEvent(event)
 
     def get_tags_to_add(self) -> Set[str]:
