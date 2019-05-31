@@ -469,7 +469,14 @@ class MainWindow(QtWidgets.QWidget):
                 tags_to_add = self.tagging_dialog.get_tags_to_add()
                 tags_to_remove = self.tagging_dialog.get_tags_to_remove()
                 created_tags = tags_to_add - set(self.tag_count.keys())
-                for item in selected_items:
+                progress_dialog = QtWidgets.QProgressDialog(
+                    'Tagging images...', 'Cancel',
+                    0, len(selected_items), self)
+                progress_dialog.setWindowModality(Qt.WindowModal)
+                progress_dialog.setMinimumDuration(0)
+
+                for n, item in enumerate(selected_items):
+                    progress_dialog.setValue(n)
                     old_tags = item.data(TAGS)
                     new_tags = (old_tags | tags_to_add) - tags_to_remove
                     if old_tags != new_tags:
@@ -481,6 +488,9 @@ class MainWindow(QtWidgets.QWidget):
                         jfti.set_tags(path, new_tags)
                         item.setData(TAGS, new_tags)
                         updated_files[item.data(PATH)] = new_tags
+                    if progress_dialog.wasCanceled():
+                        break
+                progress_dialog.setValue(len(selected_items))
                 if updated_files:
                     # Update the cache
                     if not CACHE.exists():
