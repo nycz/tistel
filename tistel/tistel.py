@@ -389,7 +389,6 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_loader_thread.start()
         self.thumb_view = QtWidgets.QListWidget(splitter)
         self.thumb_view.setUniformItemSizes(True)
-        self.thumb_view.setLayoutMode(QtWidgets.QListView.Batched)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setIconSize(QtCore.QSize(192, 128))
         self.thumb_view.setGridSize(QtCore.QSize(210, 160))
