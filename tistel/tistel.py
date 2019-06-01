@@ -500,6 +500,7 @@ class MainWindow(QtWidgets.QWidget):
             result = self.tagging_dialog.exec_()
             if result:
                 new_tag_count: typing.Counter[str] = Counter()
+                untagged_diff = 0
                 updated_files = {}
                 tags_to_add = self.tagging_dialog.get_tags_to_add()
                 tags_to_remove = self.tagging_dialog.get_tags_to_remove()
@@ -523,6 +524,10 @@ class MainWindow(QtWidgets.QWidget):
                         jfti.set_tags(path, new_tags)
                         item.setData(TAGS, new_tags)
                         updated_files[item.data(PATH)] = new_tags
+                        if not old_tags and new_tags:
+                            untagged_diff -= 1
+                        elif old_tags and not new_tags:
+                            untagged_diff += 1
                     if progress_dialog.wasCanceled():
                         break
                 progress_dialog.setValue(len(selected_items))
@@ -544,6 +549,8 @@ class MainWindow(QtWidgets.QWidget):
                     # Update the tag list
                     self.tag_count.update(new_tag_count)
                     untagged_item = self.left_column.tag_list.takeItem(0)
+                    untagged_item.setData(TAGS, (untagged_item.data(TAGS)
+                                                 + untagged_diff))
                     tag_items_to_delete = []
                     for i in range(self.left_column.tag_list.count()):
                         tag_item = self.left_column.tag_list.item(i)
@@ -552,6 +559,7 @@ class MainWindow(QtWidgets.QWidget):
                         if diff != 0:
                             new_count = tag_item.data(TAGS) + diff
                             if new_count <= 0:
+                                del self.tag_count[tag]
                                 tag_items_to_delete.append(i)
                             tag_item.setData(TAGS, new_count)
                     # Get rid of the items in reverse order
@@ -898,7 +906,9 @@ class LeftColumn(QtWidgets.QWidget):
         self.tag_list.clear()
         for tag, count in tags:
             self.create_tag(tag, count)
+        untagged = self.tag_list.takeItem(0)
         self.tag_list.sortItems(Qt.DescendingOrder)
+        self.tag_list.insertItem(0, untagged)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
         for i in range(self.tag_list.count()):
