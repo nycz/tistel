@@ -507,11 +507,14 @@ class MainWindow(QtWidgets.QWidget):
                 created_tags = tags_to_add - set(self.tag_count.keys())
                 progress_dialog = QtWidgets.QProgressDialog(
                     'Tagging images...', 'Cancel',
-                    0, len(selected_items), self)
+                    0, len(selected_items))
                 progress_dialog.setWindowModality(Qt.WindowModal)
                 progress_dialog.setMinimumDuration(0)
 
+                total = len(selected_items)
                 for n, item in enumerate(selected_items):
+                    progress_dialog.setLabelText(f'Tagging images... '
+                                                 f'({n}/{total})')
                     progress_dialog.setValue(n)
                     old_tags = item.data(TAGS)
                     new_tags = (old_tags | tags_to_add) - tags_to_remove
