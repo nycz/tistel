@@ -9,7 +9,7 @@ import zlib
 
 import exifread
 from jfti import jfti
-from PyQt5 import QtGui, QtCore
+from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, pyqtSignal
 
 from .shared import CACHE
@@ -154,12 +154,16 @@ class ImageLoader(QtCore.QObject):
 
 
 class Indexer(QtCore.QObject):
-    status_report = pyqtSignal(str, int, int)
+    set_text = pyqtSignal(str)
+    set_value = pyqtSignal(int)
+    set_max = pyqtSignal(int)
     done = pyqtSignal()
 
     def index_images(self, paths: Iterable[Path]) -> None:
+        self.set_max.emit(0)
+        self.set_value.emit(0)
+        self.set_text.emit('Loading cache...')
         if CACHE.exists():
-            self.status_report.emit('Loading cache', -1, -1)
             cache = json.loads(CACHE.read_text())
         else:
             cache = {'updated': time.time(), 'images': {}}
@@ -171,12 +175,15 @@ class Indexer(QtCore.QObject):
                 if path.suffix.lower() not in {'.png', '.jpg'}:
                     continue
                 count += 1
-                self.status_report.emit('Searching for images', count, -1)
+                self.set_text.emit(f'Searching for images... '
+                                   f'({count} found)')
                 image_paths.append(path)
         total = count
+        self.set_max.emit(total)
         count = 0
         for path in image_paths:
-            self.status_report.emit('Indexing image', count, total)
+            self.set_text.emit(f'Indexing images... ({count}/{total})')
+            self.set_value.emit(count)
             count += 1
             path_str = str(path)
             stat = path.stat()
@@ -196,8 +203,10 @@ class Indexer(QtCore.QObject):
                 'mtime': stat.st_mtime,
                 'ctime': stat.st_ctime
             }
+        self.set_max.emit(0)
+        self.set_value.emit(0)
         if not CACHE.parent.exists():
             CACHE.parent.mkdir(parents=True)
-        self.status_report.emit('Saving cache', -1, -1)
+        self.set_text.emit('Saving cache...')
         CACHE.write_text(json.dumps(cache))
         self.done.emit()

@@ -42,32 +42,6 @@ class ProgressBar(QtWidgets.QProgressBar):
                 f' ({value/max(total, 1):.0%})')
 
 
-class IndexerProgress(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget) -> None:
-        super().__init__(parent)
-        self.setModal(True)
-        layout = QtWidgets.QVBoxLayout(self)
-        self.status_text = QtWidgets.QLabel(self)
-        layout.addWidget(self.status_text)
-        self.counter = QtWidgets.QLabel(self)
-        layout.addWidget(self.counter)
-        self.progress_bar = QtWidgets.QProgressBar(self)
-        layout.addWidget(self.progress_bar)
-
-    def update_status(self, text: str, current: int, total: int) -> None:
-        self.status_text.setText(text)
-        if current >= 0 and total >= 0:
-            if not self.progress_bar.isVisible():
-                self.progress_bar.show()
-            self.counter.setText(f'{current}/{total}')
-            self.progress_bar.setValue(current)
-            self.progress_bar.setMaximum(total)
-        elif current >= 0:
-            if self.progress_bar.isVisible():
-                self.progress_bar.hide()
-            self.counter.setText(str(current))
-
-
 class MainWindow(QtWidgets.QWidget):
     image_queued = pyqtSignal(int, list)
     start_indexing = pyqtSignal(set)
@@ -302,8 +276,13 @@ class MainWindow(QtWidgets.QWidget):
         self.start_indexing.connect(self.indexer.index_images)
         self.indexer_thread.start()
 
-        self.indexer_progressbar = IndexerProgress(self)
-        self.indexer.status_report.connect(self.indexer_progressbar.update_status)
+        self.indexer_progressbar = QtWidgets.QProgressDialog()
+        self.indexer_progressbar.setWindowModality(Qt.WindowModal)
+        self.indexer_progressbar.setMinimumDuration(0)
+        self.indexer.done.connect(self.indexer_progressbar.reset)
+        self.indexer.set_text.connect(self.indexer_progressbar.setLabelText)
+        self.indexer.set_value.connect(self.indexer_progressbar.setValue)
+        self.indexer.set_max.connect(self.indexer_progressbar.setMaximum)
 
         cast(pyqtSignal, self.left_column.reload_button.clicked
              ).connect(self.index_images)
@@ -316,7 +295,6 @@ class MainWindow(QtWidgets.QWidget):
 
     def index_images(self) -> None:
         self.start_indexing.emit(self.paths)
-        self.indexer_progressbar.show()
 
     def load_index(self, skip_cache: bool = False) -> None:
         self.indexer_progressbar.accept()
