@@ -13,6 +13,7 @@ from typing import (Any, cast, Dict, Iterable, List,
 from urllib.parse import quote
 import zlib
 
+import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtProperty, pyqtSignal, Qt
 from PyQt5.QtGui import QColor
@@ -185,6 +186,20 @@ def try_to_load_image(path: Path
     return None, None
 
 
+def set_rotation(orientation: List[int]) -> QtGui.QTransform:
+    transform = QtGui.QTransform()
+    if orientation.values == [8]:
+        # Rotate left
+        transform.rotate(-90)
+    elif orientation.values == [6]:
+        # Rotate right
+        transform.rotate(90)
+    elif orientation.values == [3]:
+        # Rotate 180
+        transform.rotate(180)
+    return transform
+
+
 def generate_thumbnail(thumb_path: Path, image_path: Path,
                        uri_path: bytes) -> bool:
     pngbytes = QtCore.QByteArray()
@@ -192,6 +207,14 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     pixmap, img_format = try_to_load_image(image_path)
     if pixmap is None:
         return False
+    # Rotate the thumbnail
+    with open(image_path, 'rb') as f:
+        exif = exifread.process_file(f, stop_tag='Orientation')
+    orientation = exif.get('Image Orientation')
+    if orientation:
+        transform = set_rotation(orientation)
+        if not transform.isIdentity():
+            pixmap = pixmap.transformed(transform)
     scaled_pixmap = pixmap.scaled(192, 128,
                                   aspectRatioMode=QtCore.Qt.KeepAspectRatio,
                                   transformMode=QtCore.Qt.SmoothTransformation)
@@ -411,8 +434,19 @@ class MainWindow(QtWidgets.QWidget):
         def load_big_image(current: QtWidgets.QListWidgetItem,
                            prev: QtWidgets.QListWidgetItem) -> None:
             if current and not current.isHidden():
-                self.image_view.setPixmap(
-                    QtGui.QPixmap(str(current.data(PATH))))
+                path = current.data(PATH)
+                with open(path, 'rb') as f:
+                    exif = exifread.process_file(f, stop_tag='Orientation')
+                orientation = exif.get('Image Orientation')
+                pixmap: Optional[QtGui.QPixmap] = None
+                if orientation:
+                    transform = set_rotation(orientation)
+                    if not transform.isIdentity():
+                        img = QtGui.QImage(str(path)).transformed(transform)
+                        pixmap = QtGui.QPixmap.fromImage(img)
+                if pixmap is None:
+                    pixmap = QtGui.QPixmap(str(path))
+                self.image_view.setPixmap(pixmap)
                 self.left_column.set_info(current)
             else:
                 self.image_view.setPixmap(None)

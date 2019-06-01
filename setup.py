@@ -8,6 +8,7 @@ setuptools.setup(
     version="0.0.1",
     author="nycz",
     description="image viewer/organizer",
+    install_requires=['exifread'],
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
