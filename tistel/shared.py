@@ -13,6 +13,7 @@ TAGS = Qt.UserRole + 3
 TAGSTATE = Qt.UserRole + 4
 VISIBLE_TAGS = Qt.UserRole + 5
 DEFAULT_COLOR = Qt.UserRole + 6
+HOVERING = Qt.UserRole + 7
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'

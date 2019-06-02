@@ -31,7 +31,14 @@
 #image_view {
   background: black;
 }
+
+#tag_list_box {
+  background: #111;
+}
+
 #tag_list { 
+  border-top: 2px solid black;
+  padding: 2px;
   background: #111;
   font-size: 14px;
   qproperty-default_color: #fff;
@@ -40,23 +47,101 @@
 }
 
 #tag_list::item {
-  background: #111;
   padding: 3px;
+  background: blue;
 }
 
-#tag_list::item:checked {
-  color: green;
+#clear_button, #sort_button {
+  padding: 5px;
+  margin: 4px;
 }
 
-#tag_list::item:unchecked {
-  color: red;
+#sort_button {
+  margin-left: 0;
+  border: 2px solid #777;
+  background: #444;
+  color: #999;
 }
 
+#sort_button:hover {
+  border: 2px solid #999;
+  background: #666;
+  color: #bbb;
+}
+
+#sort_button:checked {
+  border: 2px solid #9bb;
+  background: #355;
+  color: white;
+}
+
+#sort_button:hover:checked {
+  border: 2px solid #bdd;
+  background: #577;
+}
+
+#clear_button {
+  background: #211;
+  border: 2px solid #877;
+  color: #eee;
+}
+
+#clear_button:hover {
+  background: #433;
+  border: 2px solid #a99;
+  color: white;
+}
+
+#clear_button:pressed {
+  background: #1c0c0c;
+  border: 2px solid #766;
+  color: #fcc;
+}
+
+MainWindow {
+  background: black;
+}
 
 QTabWidget::pane {
-  border: 0;
+  border-top: 1px solid #000;
 }
 
+QTabWidget::tab-bar {
+  left: 4px;
+}
+
+QTabBar::tab {
+  padding: 5px 10px 4px;
+  margin: 2px;
+  margin-bottom: 0;
+  border: 1px solid #777;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  background: #999;
+  font-weight: bold;
+  color: black;
+}
+
+QTabBar::tab:selected {
+  background: #eee;
+  color: black;
+}
+
+QTabBar::tab:hover {
+  background: #fff;
+  color: black;
+}
+
+LeftColumn QPushButton {
+  background: #666;
+  color: white;
+  border: 1px solid #555;
+  padding: 5px;
+}
+
+#info_box * {
+  color: #fff;
+}
 
 QSplitter::handle {
   background: #555;
