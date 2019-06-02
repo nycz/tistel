@@ -117,6 +117,7 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_view = ThumbView(splitter)
         self.thumb_view.setUniformItemSizes(True)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
+        self.thumb_view.setFocus()
         if config.show_names:
             text_height = int(QtGui.QFontMetricsF(self.thumb_view.font()
                                                   ).height() * 1.5)
@@ -571,6 +572,7 @@ class LeftColumn(QtWidgets.QWidget):
         self.tag_list = TagListWidget(self.tab_widget)
         self.tag_list.setObjectName('tag_list')
         self.tag_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.tag_list.setFocusPolicy(Qt.NoFocus)
         self.tab_widget.addTab(self.tag_list, 'Tags')
 
         # Info widget
