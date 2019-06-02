@@ -61,7 +61,7 @@ class TagListWidget(ListWidget):
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
-        self.sort_by_alpha = False
+        self.sort_by_alpha = True
         self.setItemDelegate(TagListDelegate(self))
         self.setMouseTracking(True)
         self.last_item: Optional[QtWidgets.QListWidgetItem] = None

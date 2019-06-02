@@ -198,7 +198,7 @@ class MainWindow(QtWidgets.QWidget):
                         self.index_images(skip_thumb_cache)
                     elif skip_thumb_cache:
                         self.load_index(True)
-                    elif old_config.show_names != self.config.show_names:
+                    if old_config.show_names != self.config.show_names:
                         for item in self.thumb_view:
                             item.setText(item.data(PATH).name
                                          if self.config.show_names else None)
@@ -290,8 +290,8 @@ class MainWindow(QtWidgets.QWidget):
                         count = new_tag_count.get(tag, 0)
                         if count > 0:
                             self.left_column.create_tag(tag, count)
-                    self.left_column.tag_list.sortItems(Qt.DescendingOrder)
                     self.left_column.tag_list.insertItem(0, untagged_item)
+                    self.left_column.sort_tags()
                     self.update_tag_filter()
                     # Go back to the same selected items as before (if visible)
                     for item in self.thumb_view.selectedItems():
@@ -457,6 +457,7 @@ class TaggingWindow(QtWidgets.QDialog):
         self.original_tags: typing.Counter[str] = Counter()
         self.tags_to_add: Set[str] = set()
         self.tags_to_remove: Set[str] = set()
+        self.resize(300, 500)
 
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -483,7 +484,7 @@ class TaggingWindow(QtWidgets.QDialog):
 
         # Tag list
         self.tag_list = ListWidget(self)
-        self.tag_list.sort_by_alpha = False
+        self.tag_list.sort_by_alpha = True
         layout.addWidget(self.tag_list)
 
         # Buttons
@@ -552,7 +553,7 @@ class TaggingWindow(QtWidgets.QDialog):
             else:
                 item.setCheckState(Qt.PartiallyChecked)
             self.tag_list.addItem(item)
-        self.tag_list.sortItems(Qt.DescendingOrder)
+        self.tag_list.sortItems()
         self.tag_input.setFocus()
 
 
@@ -640,6 +641,8 @@ class LeftColumn(QtWidgets.QWidget):
             lambda: sort_button_pressed(sort_alpha_button))
         sort_count_button.pressed.connect(
             lambda: sort_button_pressed(sort_count_button))
+        self.sort_alpha_button = sort_alpha_button
+        self.sort_count_button = sort_count_button
 
         def clear_tag_filters():
             for tag in self.tag_list:
@@ -712,8 +715,16 @@ class LeftColumn(QtWidgets.QWidget):
         for tag, count in tags:
             self.create_tag(tag, count)
         untagged = self.tag_list.takeItem(0)
-        self.tag_list.sortItems(Qt.DescendingOrder)
         self.tag_list.insertItem(0, untagged)
+        self.sort_tags()
+
+    def sort_tags(self) -> None:
+        if self.sort_alpha_button.isChecked():
+            button = self.sort_alpha_button
+        else:
+            button = self.sort_count_button
+        self.tag_list.sortItems(Qt.DescendingOrder
+                                if button.reversed else Qt.AscendingOrder)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
         for item in self.tag_list:
