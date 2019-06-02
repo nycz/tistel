@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import time
 import typing
-from typing import Any, cast, Dict, List, Optional, Set, Tuple
+from typing import cast, Dict, Iterable, List, Optional, Set, Tuple
 
 import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
@@ -18,20 +18,9 @@ from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS,
                      PATH, TAGS, TAGSTATE, VISIBLE_TAGS)
 from .image_loading import ImageLoader, Indexer, set_rotation
 from .image_view import ImagePreview
-from .settings import SettingsWindow
+from .settings import Settings, SettingsWindow
+from .shared import Signal1, Signal2
 from .tag_list import TagListWidget, TagListWidgetItem, TagState, update_looks
-
-
-def read_config() -> Dict[str, Any]:
-    if not CONFIG.exists():
-        default_config: Dict[str, Any] = {'directories': []}
-        if not CONFIG.parent.exists():
-            CONFIG.parent.mkdir(parents=True)
-        CONFIG.write_text(json.dumps(default_config, indent=2))
-        return default_config
-    else:
-        config: Dict[str, Any] = json.loads(CONFIG.read_text())
-        return config
 
 
 class ProgressBar(QtWidgets.QProgressBar):
@@ -43,10 +32,11 @@ class ProgressBar(QtWidgets.QProgressBar):
 
 
 class MainWindow(QtWidgets.QWidget):
-    image_queued = pyqtSignal(int, list)
-    start_indexing = pyqtSignal(set)
+    image_queued: Signal2[int,
+                          List[Tuple[int, bool, Path]]] = pyqtSignal(int, list)
+    start_indexing: Signal2[Set[Path], bool] = pyqtSignal(set, bool)
 
-    def __init__(self, config: Dict[str, Any],
+    def __init__(self, config: Settings,
                  activation_event: QtCore.pyqtSignal) -> None:
         super().__init__()
         # Settings
@@ -55,7 +45,6 @@ class MainWindow(QtWidgets.QWidget):
                                              self).activated
              ).connect(self.close)
         self.config = config
-        self.paths = {Path(p).expanduser() for p in config['directories']}
         self.tag_count: typing.Counter[str] = Counter()
 
         # Main layout
@@ -150,18 +139,28 @@ class MainWindow(QtWidgets.QWidget):
         splitter.setStretchFactor(2, 1)
 
         # Settings dialog
-        self.settings_dialog = SettingsWindow(self, self.paths)
+        self.settings_dialog = SettingsWindow(self)
 
         def show_settings_window() -> None:
-            self.settings_dialog.paths = self.paths.copy()
-            self.settings_dialog.reset_thumbnails = False
+            self.settings_dialog.set_up(self.config)
             result = self.settings_dialog.exec_()
             if result == QtWidgets.QDialog.Accepted:
-                self.paths = self.settings_dialog.paths
-                self.config['directories'] = [str(p) for p in self.paths]
-                CONFIG.write_text(json.dumps(self.config, indent=2))
-                if self.settings_dialog.reset_thumbnails:
-                    self.load_index(True)
+                old_config = self.config
+                self.config = self.settings_dialog.config
+                if old_config != self.config:
+                    self.config.save()
+                    if self.settings_dialog.clear_cache:
+                        CACHE.unlink()
+                    skip_thumb_cache = self.settings_dialog.reset_thumbnails
+                    if old_config.paths != self.config.paths:
+                        self.index_images(skip_thumb_cache)
+                    elif skip_thumb_cache:
+                        self.load_index(True)
+                    elif old_config.show_names != self.config.show_names:
+                        for i in range(self.thumb_view.count()):
+                            item = self.thumb_view.item(i)
+                            item.setText(item.data(PATH).name
+                                         if self.config.show_names else None)
 
         cast(pyqtSignal, self.left_column.settings_button.clicked
              ).connect(show_settings_window)
@@ -279,7 +278,7 @@ class MainWindow(QtWidgets.QWidget):
         self.indexer_progressbar = QtWidgets.QProgressDialog()
         self.indexer_progressbar.setWindowModality(Qt.WindowModal)
         self.indexer_progressbar.setMinimumDuration(0)
-        self.indexer.done.connect(self.indexer_progressbar.reset)
+        self.indexer.done.connect(lambda _: self.indexer_progressbar.reset())
         self.indexer.set_text.connect(self.indexer_progressbar.setLabelText)
         self.indexer.set_value.connect(self.indexer_progressbar.setValue)
         self.indexer.set_max.connect(self.indexer_progressbar.setMaximum)
@@ -293,10 +292,10 @@ class MainWindow(QtWidgets.QWidget):
         self.show()
         self.index_images()
 
-    def index_images(self) -> None:
-        self.start_indexing.emit(self.paths)
+    def index_images(self, skip_thumb_cache: bool = False) -> None:
+        self.start_indexing.emit(self.config.paths, skip_thumb_cache)
 
-    def load_index(self, skip_cache: bool = False) -> None:
+    def load_index(self, skip_thumb_cache: bool) -> None:
         self.indexer_progressbar.accept()
         if not CACHE.exists():
             return
@@ -305,7 +304,7 @@ class MainWindow(QtWidgets.QWidget):
         imgs = []
         cache = json.loads(CACHE.read_text())
         self.tag_count.clear()
-        root_paths = [str(p) for p in self.paths]
+        root_paths = [str(p) for p in self.config.paths]
         n = 0
         untagged = 0
         for raw_path, data in sorted(cache['images'].items()):
@@ -318,14 +317,14 @@ class MainWindow(QtWidgets.QWidget):
                     break
             else:
                 continue
-            item = QtWidgets.QListWidgetItem(self.default_icon,
-                                             path.name)
+            item_text = path.name if self.config.show_names else None
+            item = QtWidgets.QListWidgetItem(self.default_icon, item_text)
             item.setSizeHint(QtCore.QSize(192, 160))
             self.thumb_view.addItem(item)
             item.setData(PATH, path)
             item.setData(TAGS, set(data['tags']))
             item.setData(DIMENSIONS, (data['w'], data['h']))
-            imgs.append((n, skip_cache, path))
+            imgs.append((n, skip_thumb_cache, path))
             n += 1
             self.tag_count.update(data['tags'])
             if not data['tags']:
@@ -623,7 +622,7 @@ def main() -> int:
     app.installEventFilter(event_filter)
     app.setStyleSheet(CSS_FILE.read_text())
 
-    config = read_config()
+    config = Settings.load()
     window = MainWindow(config, event_filter.activation_event)
     app.setActiveWindow(window)
     sys.exit(app.exec_())

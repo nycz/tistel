@@ -12,7 +12,7 @@ from jfti import jfti
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, pyqtSignal
 
-from .shared import CACHE
+from .shared import CACHE, Signal0, Signal1, Signal3
 
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
@@ -106,7 +106,8 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
 
 
 class ImageLoader(QtCore.QObject):
-    thumbnail_ready = QtCore.pyqtSignal(int, int, QtGui.QIcon)
+    thumbnail_ready: Signal3[int, int, QtGui.QIcon] \
+        = QtCore.pyqtSignal(int, int, QtGui.QIcon)
 
     def __init__(self) -> None:
         super().__init__()
@@ -154,12 +155,13 @@ class ImageLoader(QtCore.QObject):
 
 
 class Indexer(QtCore.QObject):
-    set_text = pyqtSignal(str)
-    set_value = pyqtSignal(int)
-    set_max = pyqtSignal(int)
-    done = pyqtSignal()
+    set_text: Signal1[str] = pyqtSignal(str)
+    set_value: Signal1[int] = pyqtSignal(int)
+    set_max: Signal1[int] = pyqtSignal(int)
+    done: Signal1[bool] = pyqtSignal(bool)
 
-    def index_images(self, paths: Iterable[Path]) -> None:
+    def index_images(self, paths: Iterable[Path],
+                     skip_thumb_cache: bool) -> None:
         self.set_max.emit(0)
         self.set_value.emit(0)
         self.set_text.emit('Loading cache...')
@@ -209,4 +211,4 @@ class Indexer(QtCore.QObject):
             CACHE.parent.mkdir(parents=True)
         self.set_text.emit('Saving cache...')
         CACHE.write_text(json.dumps(cache))
-        self.done.emit()
+        self.done.emit(skip_thumb_cache)
