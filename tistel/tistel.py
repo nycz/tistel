@@ -32,6 +32,30 @@ class ProgressBar(QtWidgets.QProgressBar):
 
 
 class ThumbView(ListWidget):
+
+    def find_visible(self, reverse: bool = False
+                     ) -> Optional[QtWidgets.QListWidgetItem]:
+        diff = -1 if reverse else 1
+        total = self.count()
+        i = self.currentRow()
+        if i < 0 or total < 0:
+            return None
+        for _ in range(total):
+            i += diff
+            i %= total
+            item = self.item(i)
+            if not item.isHidden():
+                return item
+        return None
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == Qt.Key_Right:
+            self.setCurrentItem(self.find_visible())
+        elif event.key() == Qt.Key_Left:
+            self.setCurrentItem(self.find_visible(reverse=True))
+        else:
+            super().keyPressEvent(event)
+
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
         current = self.currentItem()
