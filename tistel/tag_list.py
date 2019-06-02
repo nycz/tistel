@@ -5,7 +5,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtProperty, Qt
 from PyQt5.QtGui import QColor
 
-from .shared import TAGS, TAGSTATE, VISIBLE_TAGS
+from .shared import ListWidget, TAGS, TAGSTATE, VISIBLE_TAGS
 
 
 class TagState(enum.Enum):
@@ -14,7 +14,7 @@ class TagState(enum.Enum):
     DEFAULT = enum.auto()
 
 
-class TagListWidget(QtWidgets.QListWidget):
+class TagListWidget(ListWidget):
     tag_state_updated = QtCore.pyqtSignal()
     tag_blacklisted = QtCore.pyqtSignal(str)
     tag_whitelisted = QtCore.pyqtSignal(str)

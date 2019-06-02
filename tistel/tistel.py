@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import time
 import typing
-from typing import cast, Dict, Iterable, List, Optional, Set, Tuple
+from typing import cast, Dict, List, Optional, Set, Tuple
 
 import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
@@ -16,10 +16,10 @@ from jfti import jfti
 
 from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS,
                      PATH, TAGS, TAGSTATE, VISIBLE_TAGS)
-from .image_loading import ImageLoader, Indexer, set_rotation
+from .image_loading import ImageLoader, Indexer, set_rotation, THUMB_SIZE
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import Signal1, Signal2
+from .shared import ListWidget, Signal2
 from .tag_list import TagListWidget, TagListWidgetItem, TagState, update_looks
 
 
@@ -29,6 +29,20 @@ class ProgressBar(QtWidgets.QProgressBar):
         total = self.maximum()
         return (f'Reloading thumbnails: {value}/{total}'
                 f' ({value/max(total, 1):.0%})')
+
+
+class ThumbView(ListWidget):
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        super().paintEvent(event)
+        current = self.currentItem()
+        if current:
+            painter = QtGui.QPainter(self.viewport())
+            rect = self.visualItemRect(current).adjusted(10, 10, -11, -11)
+            pen = QtGui.QPen(QtGui.QColor('#1bf986'))
+            pen.setWidth(3)
+            pen.setJoinStyle(Qt.MiterJoin)
+            painter.setPen(pen)
+            painter.drawRect(rect)
 
 
 class MainWindow(QtWidgets.QWidget):
@@ -63,9 +77,10 @@ class MainWindow(QtWidgets.QWidget):
         splitter.addWidget(self.left_column)
 
         # Middle column - thumbnails
-        default_thumb = QtGui.QPixmap(192, 128)
+        default_thumb = QtGui.QPixmap(THUMB_SIZE)
         default_thumb.fill(QtGui.QColor(QtCore.Qt.gray))
         self.default_icon = QtGui.QIcon(default_thumb)
+        self.default_icon.addPixmap(default_thumb, QtGui.QIcon.Selected)
 
         self.thumb_loader_thread = QtCore.QThread()
         cast(QtCore.pyqtSignal, QtWidgets.QApplication.instance().aboutToQuit
@@ -75,13 +90,24 @@ class MainWindow(QtWidgets.QWidget):
         self.image_queued.connect(self.thumb_loader.load_image)
         self.thumb_loader.thumbnail_ready.connect(self.add_thumbnail)
         self.thumb_loader_thread.start()
-        self.thumb_view = QtWidgets.QListWidget(splitter)
+        self.thumb_view = ThumbView(splitter)
         self.thumb_view.setUniformItemSizes(True)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
-        self.thumb_view.setIconSize(QtCore.QSize(192, 128))
-        self.thumb_view.setGridSize(QtCore.QSize(210, 160))
+        if config.show_names:
+            text_height = int(QtGui.QFontMetricsF(self.thumb_view.font()
+                                                  ).height() * 1.5)
+        else:
+            text_height = 0
+        self.thumb_view.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))
+        margin = (10 + 3) * 2
+        self.thumb_view.setGridSize(THUMB_SIZE
+                                    + QtCore.QSize(margin,
+                                                   margin + text_height))
         self.thumb_view.setMovement(QtWidgets.QListWidget.Static)
         self.thumb_view.setResizeMode(QtWidgets.QListWidget.Adjust)
+        p = self.thumb_view.palette()
+        p.setColor(QtGui.QPalette.Highlight, Qt.green)
+        self.thumb_view.setPalette(p)
         self.thumb_view.setObjectName('thumb_view')
         self.thumb_view.setSelectionMode(
             QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -157,8 +183,7 @@ class MainWindow(QtWidgets.QWidget):
                     elif skip_thumb_cache:
                         self.load_index(True)
                     elif old_config.show_names != self.config.show_names:
-                        for i in range(self.thumb_view.count()):
-                            item = self.thumb_view.item(i)
+                        for item in self.thumb_view:
                             item.setText(item.data(PATH).name
                                          if self.config.show_names else None)
 
@@ -319,8 +344,8 @@ class MainWindow(QtWidgets.QWidget):
                 continue
             item_text = path.name if self.config.show_names else None
             item = QtWidgets.QListWidgetItem(self.default_icon, item_text)
-            item.setSizeHint(QtCore.QSize(192, 160))
             self.thumb_view.addItem(item)
+            item.setBackground(QtGui.QBrush(Qt.red))
             item.setData(PATH, path)
             item.setData(TAGS, set(data['tags']))
             item.setData(DIMENSIONS, (data['w'], data['h']))
@@ -360,8 +385,7 @@ class MainWindow(QtWidgets.QWidget):
         blacklist = set()
         untagged_state = TagState.DEFAULT
         tag_count: typing.Counter[str] = Counter()
-        for i in range(self.left_column.tag_list.count()):
-            tag_item = self.left_column.tag_list.item(i)
+        for tag_item in self.left_column.tag_list:
             state = tag_item.data(TAGSTATE)
             tag = tag_item.data(PATH)
             if tag == '':
@@ -371,8 +395,7 @@ class MainWindow(QtWidgets.QWidget):
             elif state == TagState.BLACKLISTED:
                 blacklist.add(tag)
         untagged = 0
-        for i in range(self.thumb_view.count()):
-            item = self.thumb_view.item(i)
+        for item in self.thumb_view:
             tags = item.data(TAGS)
             if (untagged_state == TagState.WHITELISTED and tags) \
                     or (untagged_state == TagState.BLACKLISTED and not tags) \
@@ -390,10 +413,9 @@ class MainWindow(QtWidgets.QWidget):
         tag_count[''] = untagged
         self.left_column.update_tags(tag_count)
         # Set the current row to the first visible item
-        get_item = self.thumb_view.item
-        for i in range(self.thumb_view.count()):
-            if not get_item(i).isHidden():
-                self.thumb_view.setCurrentRow(i)
+        for item in self.thumb_view:
+            if not item.isHidden():
+                self.thumb_view.setCurrentItem(item)
                 break
         else:
             self.thumb_view.setCurrentRow(-1)
@@ -422,8 +444,7 @@ class TaggingWindow(QtWidgets.QDialog):
         layout.addLayout(input_box)
 
         def update_add_button(text: str) -> None:
-            tags = {self.tag_list.item(i).data(PATH)
-                    for i in range(self.tag_list.count())}
+            tags = {item.data(PATH) for item in self.tag_list}
             tag = text.strip()
             self.add_tag_button.setEnabled(bool(tag) and tag not in tags)
 
@@ -432,7 +453,7 @@ class TaggingWindow(QtWidgets.QDialog):
         cast(pyqtSignal, self.add_tag_button.clicked).connect(self.add_tag)
 
         # Tag list
-        self.tag_list = QtWidgets.QListWidget(self)
+        self.tag_list = ListWidget(self)
         layout.addWidget(self.tag_list)
 
         # Buttons
@@ -453,16 +474,14 @@ class TaggingWindow(QtWidgets.QDialog):
 
     def get_tags_to_add(self) -> Set[str]:
         out = set()
-        for i in range(self.tag_list.count()):
-            item = self.tag_list.item(i)
+        for item in self.tag_list:
             if item.checkState() == Qt.Checked:
                 out.add(item.data(PATH))
         return out
 
     def get_tags_to_remove(self) -> Set[str]:
         out = set()
-        for i in range(self.tag_list.count()):
-            item = self.tag_list.item(i)
+        for item in self.tag_list:
             if item.checkState() == Qt.Unchecked:
                 out.add(item.data(PATH))
         return out
@@ -472,8 +491,7 @@ class TaggingWindow(QtWidgets.QDialog):
             return
         tag = self.tag_input.text().strip()
         if tag:
-            tags = {self.tag_list.item(i).data(PATH)
-                    for i in range(self.tag_list.count())}
+            tags = {item.data(PATH) for item in self.tag_list}
             if tag not in tags:
                 item = TagListWidgetItem(f'{tag} (NEW)')
                 item.setData(PATH, tag)
@@ -593,8 +611,7 @@ class LeftColumn(QtWidgets.QWidget):
         self.tag_list.insertItem(0, untagged)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
-        for i in range(self.tag_list.count()):
-            item = self.tag_list.item(i)
+        for item in self.tag_list:
             tag = item.data(PATH)
             new_count = tag_count[tag]
             item.setData(VISIBLE_TAGS, new_count)

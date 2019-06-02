@@ -20,6 +20,8 @@ IMAGE_MAGICS = ([b'\x89PNG\x0d\x0a\x1a\x0a'],
                 [b'\xff\xd8'],
                 [b'GIF87a', b'GIF89a'])
 
+THUMB_SIZE = QtCore.QSize(192, 128)
+
 
 def set_rotation(orientation: List[int]) -> QtGui.QTransform:
     transform = QtGui.QTransform()
@@ -86,7 +88,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
         transform = set_rotation(orientation)
         if not transform.isIdentity():
             pixmap = pixmap.transformed(transform)
-    scaled_pixmap = pixmap.scaled(192, 128,
+    scaled_pixmap = pixmap.scaled(THUMB_SIZE,
                                   aspectRatioMode=QtCore.Qt.KeepAspectRatio,
                                   transformMode=QtCore.Qt.SmoothTransformation)
     scaled_pixmap.save(buf, 'PNG')
@@ -112,22 +114,28 @@ class ImageLoader(QtCore.QObject):
     def __init__(self) -> None:
         super().__init__()
         self.cache_path = Path.home() / '.thumbnails' / 'normal'
-        fail_thumb = QtGui.QPixmap(192, 128)
+        fail_thumb = QtGui.QPixmap(THUMB_SIZE)
         fail_thumb.fill(QtGui.QColor(QtCore.Qt.darkRed))
-        self.base_thumb = QtGui.QImage(192, 128, QtGui.QImage.Format_ARGB32)
+        self.base_thumb = QtGui.QImage(THUMB_SIZE,
+                                       QtGui.QImage.Format_ARGB32)
         self.base_thumb.fill(Qt.transparent)
         self.fail_icon = QtGui.QIcon(fail_thumb)
+        self.fail_icon.addPixmap(fail_thumb, QtGui.QIcon.Selected)
         self.cached_thumbs: Dict[Path, QtGui.QIcon] = {}
 
     def make_thumb(self, path: Path) -> QtGui.QIcon:
         img = self.base_thumb.copy()
         thumb = QtGui.QImage(str(path))
         painter = QtGui.QPainter(img)
-        painter.drawImage(int((img.width() - thumb.width()) / 2),
-                          int((img.height() - thumb.height()) / 2),
-                          thumb)
+        painter.drawImage(
+            int((THUMB_SIZE.width() - thumb.width()) / 2),
+            int((THUMB_SIZE.height() - thumb.height()) / 2),
+            thumb)
         painter.end()
-        return QtGui.QIcon(QtGui.QPixmap.fromImage(img))
+        pixmap = QtGui.QPixmap.fromImage(img)
+        icon = QtGui.QIcon(pixmap)
+        icon.addPixmap(pixmap, QtGui.QIcon.Selected)
+        return icon
 
     def load_image(self, batch: int,
                    imgs: Iterable[Tuple[int, bool, Path]]) -> None:

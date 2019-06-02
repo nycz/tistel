@@ -4,6 +4,28 @@
 
 #thumb_view {
   background: #080808;
+  selection-background-color: #6cc1af;
+}
+
+#thumb_view::item {
+  border: 2px solid transparent;
+  margin: 10px;
+  selection-background-color: transparent;
+}
+
+#thumb_view::item:hover {
+  border: 2px solid #6668ddc4;
+  background: 2px solid #2292efdb;
+}
+
+#thumb_view::item:selected {
+  border: 2px solid #68ddc4;
+  background: 2px solid #226cc1af;
+}
+
+#thumb_view::item:selected:hover {
+  border: 2px solid #cffcf7;
+  background: 2px solid #2292efdb;
 }
 
 #image_view {

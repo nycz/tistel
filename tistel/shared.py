@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Callable, Type, TypeVar
+from typing import Callable, Iterator, Type, TypeVar
 from typing_extensions import Protocol
 
+from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
 
 
@@ -18,6 +19,12 @@ CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
 THUMBNAILS = Path.home() / '.thumbnails' / 'normal'
 LOCAL_PATH = Path(__file__).resolve().parent
 CSS_FILE = LOCAL_PATH / 'qt.css'
+
+
+class ListWidget(QtWidgets.QListWidget):
+    def __iter__(self) -> Iterator[QtWidgets.QListWidgetItem]:
+        for i in range(self.count()):
+            yield self.item(i)
 
 
 _T1 = TypeVar('_T1')
