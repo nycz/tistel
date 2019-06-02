@@ -118,16 +118,7 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_view.setUniformItemSizes(True)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setFocus()
-        if config.show_names:
-            text_height = int(QtGui.QFontMetricsF(self.thumb_view.font()
-                                                  ).height() * 1.5)
-        else:
-            text_height = 0
-        self.thumb_view.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))
-        margin = (10 + 3) * 2
-        self.thumb_view.setGridSize(THUMB_SIZE
-                                    + QtCore.QSize(margin,
-                                                   margin + text_height))
+        self.update_thumb_size()
         self.thumb_view.setMovement(QtWidgets.QListWidget.Static)
         self.thumb_view.setResizeMode(QtWidgets.QListWidget.Adjust)
         p = self.thumb_view.palette()
@@ -211,6 +202,7 @@ class MainWindow(QtWidgets.QWidget):
                         for item in self.thumb_view:
                             item.setText(item.data(PATH).name
                                          if self.config.show_names else None)
+                        self.update_thumb_size()
 
         cast(pyqtSignal, self.left_column.settings_button.clicked
              ).connect(show_settings_window)
@@ -341,6 +333,18 @@ class MainWindow(QtWidgets.QWidget):
         self.thumbnails_done = 0
         self.show()
         self.index_images()
+
+    def update_thumb_size(self) -> None:
+        if self.config.show_names:
+            text_height = int(QtGui.QFontMetricsF(self.thumb_view.font()
+                                                  ).height() * 1.5)
+        else:
+            text_height = 0
+        self.thumb_view.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))
+        margin = (10 + 3) * 2
+        self.thumb_view.setGridSize(THUMB_SIZE
+                                    + QtCore.QSize(margin,
+                                                   margin + text_height))
 
     def index_images(self, skip_thumb_cache: bool = False) -> None:
         self.start_indexing.emit(self.config.paths, skip_thumb_cache)
