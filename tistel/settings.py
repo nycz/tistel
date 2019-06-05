@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, cast, Dict, Iterable, List, Set, Type, TypeVar
+from typing import cast, List, Optional, Set, Type, TypeVar
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
@@ -15,21 +15,29 @@ T = TypeVar('T', bound='Settings')
 class Settings:
     _PATHS_KEY = 'directories'
     _SHOW_NAMES_KEY = 'show_names'
+    _MAIN_SPLITTER_KEY = 'main_splitter'
+    _SIDE_SPLITTER_KEY = 'side_splitter'
 
     def __init__(self) -> None:
         self.paths: Set[Path] = set()
         self.show_names = True
+        self.main_splitter: Optional[List[int]] = None
+        self.side_splitter: Optional[List[int]] = None
 
     def copy(self: T) -> T:
         clone = self.__class__()
         clone.paths = self.paths.copy()
         clone.show_names = self.show_names
+        clone.main_splitter = self.main_splitter
+        clone.side_splitter = self.side_splitter
         return clone
 
     def save(self) -> None:
         data = {
             self._PATHS_KEY: sorted(str(p) for p in self.paths),
             self._SHOW_NAMES_KEY: self.show_names,
+            self._MAIN_SPLITTER_KEY: self.main_splitter,
+            self._SIDE_SPLITTER_KEY: self.side_splitter,
         }
         json_data = json.dumps(data, indent=2)
         CONFIG.write_text(json_data)
@@ -50,6 +58,10 @@ class Settings:
                                 for p in config_data[cls._PATHS_KEY]}
             if cls._SHOW_NAMES_KEY in config_data:
                 config.show_names = config_data[cls._SHOW_NAMES_KEY]
+            if cls._MAIN_SPLITTER_KEY in config_data:
+                config.main_splitter = config_data[cls._MAIN_SPLITTER_KEY]
+            if cls._SIDE_SPLITTER_KEY in config_data:
+                config.side_splitter = config_data[cls._SIDE_SPLITTER_KEY]
             return config
 
 

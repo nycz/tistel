@@ -88,8 +88,8 @@ class MainWindow(QtWidgets.QWidget):
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        splitter = QtWidgets.QSplitter(self)
-        layout.addWidget(splitter)
+        self.splitter = QtWidgets.QSplitter(self)
+        layout.addWidget(self.splitter)
 
         # Statusbar
         self.progress = ProgressBar(self)
@@ -98,7 +98,7 @@ class MainWindow(QtWidgets.QWidget):
 
         # Left column - tags/files/dates and info
         self.left_column = LeftColumn(self)
-        splitter.addWidget(self.left_column)
+        self.splitter.addWidget(self.left_column)
 
         # Middle column - thumbnails
         default_thumb = QtGui.QPixmap(THUMB_SIZE)
@@ -114,7 +114,7 @@ class MainWindow(QtWidgets.QWidget):
         self.image_queued.connect(self.thumb_loader.load_image)
         self.thumb_loader.thumbnail_ready.connect(self.add_thumbnail)
         self.thumb_loader_thread.start()
-        self.thumb_view = ThumbView(splitter)
+        self.thumb_view = ThumbView(self.splitter)
         self.thumb_view.setUniformItemSizes(True)
         self.thumb_view.setViewMode(QtWidgets.QListView.IconMode)
         self.thumb_view.setFocus()
@@ -128,14 +128,14 @@ class MainWindow(QtWidgets.QWidget):
         self.thumb_view.setSelectionMode(
             QtWidgets.QAbstractItemView.ExtendedSelection)
 
-        splitter.addWidget(self.thumb_view)
-        splitter.setStretchFactor(1, 2)
+        self.splitter.addWidget(self.thumb_view)
+        self.splitter.setStretchFactor(1, 2)
 
         self.left_column.tag_list.tag_state_updated.connect(
             self.update_tag_filter)
 
         # Right column - big image
-        self.image_view = ImagePreview(splitter)
+        self.image_view = ImagePreview(self.splitter)
         self.image_view.setObjectName('image_view')
 
         def load_big_image(current: QtWidgets.QListWidgetItem,
@@ -177,8 +177,8 @@ class MainWindow(QtWidgets.QWidget):
                     return
 
         self.image_view.change_image.connect(change_image)
-        splitter.addWidget(self.image_view)
-        splitter.setStretchFactor(2, 1)
+        self.splitter.addWidget(self.image_view)
+        self.splitter.setStretchFactor(2, 1)
 
         # Settings dialog
         self.settings_dialog = SettingsWindow(self)
@@ -337,10 +337,28 @@ class MainWindow(QtWidgets.QWidget):
              ).connect(self.index_images)
 
         # Finalize
+        if config.main_splitter:
+            self.splitter.setSizes(config.main_splitter)
+        if config.side_splitter:
+            self.left_column.splitter.setSizes(config.side_splitter)
+        self.make_event_filter()
         self.batch = 0
         self.thumbnails_done = 0
         self.show()
         self.index_images()
+
+    def make_event_filter(self) -> None:
+        class MainWindowEventFilter(QtCore.QObject):
+            def eventFilter(self_, obj: QtCore.QObject,
+                            event: QtCore.QEvent) -> bool:
+                if event.type() == QtCore.QEvent.Close:
+                    self.config.main_splitter = self.splitter.sizes()
+                    self.config.side_splitter = \
+                        self.left_column.splitter.sizes()
+                    self.config.save()
+                return False
+        self.close_filter = MainWindowEventFilter()
+        self.installEventFilter(self.close_filter)
 
     def update_thumb_size(self) -> None:
         if self.config.show_names:
@@ -591,14 +609,14 @@ class LeftColumn(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Splitter between tabs and info
-        splitter = QtWidgets.QSplitter(Qt.Vertical, self)
-        layout.addWidget(splitter)
+        self.splitter = QtWidgets.QSplitter(Qt.Vertical, self)
+        layout.addWidget(self.splitter)
 
         # Tab widget
         self.tab_widget = QtWidgets.QTabWidget(self)
         self.tab_widget.setFocusPolicy(Qt.NoFocus)
-        splitter.addWidget(self.tab_widget)
-        splitter.setStretchFactor(0, 1)
+        self.splitter.addWidget(self.tab_widget)
+        self.splitter.setStretchFactor(0, 1)
 
         # Tag list box
         tag_list_box = QtWidgets.QWidget(self.tab_widget)
@@ -679,8 +697,8 @@ class LeftColumn(QtWidgets.QWidget):
         self.info_dimensions.setWordWrap(True)
         info_layout.addWidget(self.info_dimensions)
         info_layout.addStretch()
-        splitter.addWidget(self.info_box)
-        splitter.setStretchFactor(1, 0)
+        self.splitter.addWidget(self.info_box)
+        self.splitter.setStretchFactor(1, 0)
 
         # Buttons at the bottom
         bottom_row = QtWidgets.QHBoxLayout()
