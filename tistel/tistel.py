@@ -216,6 +216,8 @@ class MainWindow(QtWidgets.QWidget):
             self.tagging_dialog.set_up(self.tag_count, selected_items)
             result = self.tagging_dialog.exec_()
             if result:
+                slider_pos = self.thumb_view.verticalScrollBar()\
+                    .sliderPosition()
                 new_tag_count: typing.Counter[str] = Counter()
                 untagged_diff = 0
                 updated_files = {}
@@ -302,6 +304,8 @@ class MainWindow(QtWidgets.QWidget):
                         if not item.isHidden() and not item.isSelected():
                             item.setSelected(True)
                     self.thumb_view.setCurrentItem(current_item)
+                    self.thumb_view.verticalScrollBar()\
+                        .setSliderPosition(slider_pos)
 
         cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
                                              self).activated
