@@ -243,7 +243,11 @@ class MainWindow(QtWidgets.QWidget):
                         new_tag_count.update({t: 1 for t in added_tags})
                         new_tag_count.update({t: -1 for t in removed_tags})
                         path = item.data(PATH)
-                        jfti.set_tags(path, new_tags)
+                        try:
+                            jfti.set_tags(path, new_tags)
+                        except Exception:
+                            print('FAIL', path)
+                            raise
                         item.setData(TAGS, new_tags)
                         updated_files[item.data(PATH)] = new_tags
                         if not old_tags and new_tags:
