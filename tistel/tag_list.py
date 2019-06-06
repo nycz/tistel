@@ -18,11 +18,16 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter: QtGui.QPainter,
               option: QtWidgets.QStyleOptionViewItem,
               index: QtCore.QModelIndex) -> None:
+        parent: 'TagListWidget' = option.styleObject
+        tag = index.data(PATH)
+        painter.setRenderHints(QtGui.QPainter.Antialiasing)
+        dot_width = 10
         padding = (option.rect.height() - option.fontMetrics.height()) // 2
-        rect = option.rect.adjusted(padding, padding, -padding, -padding)
-        painter.fillRect(option.rect, option.backgroundBrush)
+        rect = option.rect.adjusted(padding + dot_width, padding,
+                                    -padding, -padding)
+        if tag in parent.selected_item_tags:
+            painter.fillRect(option.rect, QtGui.QColor(255, 255, 150, 10))
         state = index.data(TAGSTATE)
-        parent = option.styleObject
         colors = {TagState.WHITELISTED: parent.property('whitelisted_color'),
                   TagState.DEFAULT: parent.property('default_color'),
                   TagState.BLACKLISTED: parent.property('blacklisted_color')}
@@ -45,10 +50,18 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
             font.setBold(False)
         painter.setFont(font)
         painter.setPen(color)
-        painter.drawText(rect, Qt.TextSingleLine,
-                         index.data(PATH) or '<Untagged>')
+        painter.drawText(rect, Qt.TextSingleLine, tag or '<Untagged>')
         painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine,
                          f'{visible_count} / {count}')
+        if tag in parent.selected_item_tags:
+            pen = QtGui.QPen()
+            pen.setWidth(0)
+            painter.setPen(pen)
+            painter.setBrush(QtGui.QColor('#ffffcc'))
+            painter.drawEllipse(
+                QtCore.QPoint(padding + dot_width // 2,
+                              option.rect.top() + option.rect.height() // 2),
+                3, 3)
 
 
 class TagListWidget(ListWidget):
@@ -58,6 +71,7 @@ class TagListWidget(ListWidget):
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
+        self.selected_item_tags = set()
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
@@ -65,6 +79,11 @@ class TagListWidget(ListWidget):
         self.setItemDelegate(TagListDelegate(self))
         self.setMouseTracking(True)
         self.last_item: Optional[QtWidgets.QListWidgetItem] = None
+
+    def set_current_thumb(self, current: QtWidgets.QListWidgetItem,
+                          previous: QtWidgets.QListWidgetItem) -> None:
+        self.selected_item_tags = current.data(TAGS)
+        self.update()
 
     def clear(self) -> None:
         self.last_item = None

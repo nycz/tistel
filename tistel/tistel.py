@@ -57,6 +57,8 @@ class MainWindow(QtWidgets.QWidget):
 
         self.sidebar.tag_list.tag_state_updated.connect(
             self.update_tag_filter)
+        self.thumb_view.currentItemChanged.connect(
+            self.sidebar.tag_list.set_current_thumb)
 
         # Right column - big image
         self.image_view = ImagePreview(self.splitter)
