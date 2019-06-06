@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Type, TypeVar
 from typing_extensions import Protocol
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
 
 
@@ -26,6 +26,32 @@ class ListWidget(QtWidgets.QListWidget):
     def __iter__(self) -> Iterator[QtWidgets.QListWidgetItem]:
         for i in range(self.count()):
             yield self.item(i)
+
+
+class Icon(QtSvg.QSvgWidget):
+    def __init__(self, path: str, resolution: int,
+                 parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setFixedSize(QtCore.QSize(resolution, resolution))
+        with open(path, 'rb') as f:
+            data = f.read()
+        data = data.replace(b'stroke="currentColor"', b'stroke="#eee"')
+        self.load(data)
+
+
+def clear_layout(layout: QtWidgets.QLayout) -> None:
+    while layout.count() > 0:
+        item = layout.takeAt(0)
+        item.widget().deleteLater()
+        del item
+
+
+def human_filesize(bytenum: int) -> str:
+    for t in ['', 'K', 'M', 'G', 'T']:
+        if bytenum < 1000:
+            break
+        bytenum /= 1000
+    return f'{bytenum:.1f}{t}'
 
 
 _T1 = TypeVar('_T1')

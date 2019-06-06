@@ -14,8 +14,9 @@ from PyQt5.QtWidgets import QDialogButtonBox, QPushButton
 
 from jfti import jfti
 
-from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS,
+from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS, FILESIZE,
                      PATH, TAGS, TAGSTATE, VISIBLE_TAGS)
+from .details_view import DetailsBox
 from .image_loading import ImageLoader, Indexer, set_rotation, THUMB_SIZE
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
@@ -154,10 +155,10 @@ class MainWindow(QtWidgets.QWidget):
                 if pixmap is None:
                     pixmap = QtGui.QPixmap(str(path))
                 self.image_view.setPixmap(pixmap)
-                self.left_column.set_info(current)
+                self.left_column.info_box.set_info(current)
             else:
                 self.image_view.setPixmap(None)
-                self.left_column.set_info(None)
+                self.left_column.info_box.set_info(None)
 
         cast(pyqtSignal, self.thumb_view.currentItemChanged
              ).connect(load_big_image)
@@ -402,6 +403,7 @@ class MainWindow(QtWidgets.QWidget):
             self.thumb_view.addItem(item)
             item.setBackground(QtGui.QBrush(Qt.red))
             item.setData(PATH, path)
+            item.setData(FILESIZE, data['size'])
             item.setData(TAGS, set(data['tags']))
             item.setData(DIMENSIONS, (data['w'], data['h']))
             imgs.append((n, skip_thumb_cache, path))
@@ -684,19 +686,7 @@ class LeftColumn(QtWidgets.QWidget):
         self.tab_widget.addTab(QtWidgets.QLabel('todo'), 'Dates')
 
         # Info widget
-        self.info_box = QtWidgets.QFrame(self)
-        self.info_box.setObjectName('info_box')
-        info_layout = QtWidgets.QVBoxLayout(self.info_box)
-        self.info_path = QtWidgets.QLabel(self.info_box)
-        self.info_path.setWordWrap(True)
-        info_layout.addWidget(self.info_path)
-        self.info_tags = QtWidgets.QLabel(self.info_box)
-        self.info_tags.setWordWrap(True)
-        info_layout.addWidget(self.info_tags)
-        self.info_dimensions = QtWidgets.QLabel(self.info_box)
-        self.info_dimensions.setWordWrap(True)
-        info_layout.addWidget(self.info_dimensions)
-        info_layout.addStretch()
+        self.info_box = DetailsBox(self)
         self.splitter.addWidget(self.info_box)
         self.splitter.setStretchFactor(1, 0)
 
@@ -707,22 +697,6 @@ class LeftColumn(QtWidgets.QWidget):
         self.reload_button = QtWidgets.QPushButton('Reload', self)
         bottom_row.addWidget(self.reload_button)
         layout.addLayout(bottom_row)
-
-    def set_info(self, item: Optional[QtWidgets.QListWidgetItem]) -> None:
-        if item is not None:
-            if self.info_box.isHidden():
-                self.info_box.show()
-            tags = item.data(TAGS)
-            path = item.data(PATH)
-            width, height = item.data(DIMENSIONS)
-            self.info_path.setText(str(path))
-            self.info_tags.setText(', '.join(sorted(tags)))
-            self.info_dimensions.setText(f'{width} x {height}')
-        else:
-            self.info_box.hide()
-            self.info_path.clear()
-            self.info_tags.clear()
-            self.info_dimensions.clear()
 
     @staticmethod
     def _tag_format(tag: str, visible: int, total: int) -> str:

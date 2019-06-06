@@ -139,8 +139,20 @@ LeftColumn QPushButton {
   padding: 5px;
 }
 
+QScrollArea {
+  border: none;
+}
+
+#info_box {
+  background: #090909;
+}
+
 #info_box * {
   color: #fff;
+}
+
+#tag {
+  font-style: italic;
 }
 
 QSplitter::handle {
