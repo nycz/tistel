@@ -111,7 +111,7 @@ class TagListWidget(ListWidget):
         if self.last_item is not None:
             self.last_item.setData(HOVERING, False)
 
-    def enterEvent(self, event: QtCore.QEvent) -> None:
+    def enterEvent(self, event: QtGui.QEnterEvent) -> None:
         super().enterEvent(event)
         if self.last_item is not None:
             self.last_item.setData(HOVERING, False)

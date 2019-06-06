@@ -20,8 +20,8 @@ class DetailsBox(QtWidgets.QScrollArea):
         self.filename = QtWidgets.QLabel(self)
         self.filename.setWordWrap(True)
         layout.addWidget(self.filename)
-        self.size = QtWidgets.QLabel(self)
-        layout.addWidget(self.size)
+        self.filesize = QtWidgets.QLabel(self)
+        layout.addWidget(self.filesize)
         self.dimensions = QtWidgets.QLabel(self)
         layout.addWidget(self.dimensions)
         self.tag_box = QtWidgets.QGridLayout()
@@ -32,7 +32,7 @@ class DetailsBox(QtWidgets.QScrollArea):
         if item is None:
             self.directory.clear()
             self.filename.clear()
-            self.size.clear()
+            self.filesize.clear()
             self.dimensions.clear()
             clear_layout(self.tag_box)
         else:
@@ -42,7 +42,7 @@ class DetailsBox(QtWidgets.QScrollArea):
             width, height = item.data(DIMENSIONS)
             self.dimensions.setText(f'<b>Dimensions:</b> {width} x {height}')
             size = item.data(FILESIZE)
-            self.size.setText(f'<b>Size:</b> {human_filesize(size)}')
+            self.filesize.setText(f'<b>Size:</b> {human_filesize(size)}')
             tags = item.data(TAGS)
             clear_layout(self.tag_box)
             for n, tag in enumerate(tags):

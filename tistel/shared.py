@@ -62,11 +62,13 @@ def make_svg_icon(name: str, resolution: int,
 def clear_layout(layout: QtWidgets.QLayout) -> None:
     while layout.count() > 0:
         item = layout.takeAt(0)
-        item.widget().deleteLater()
+        if item is not None:
+            item.widget().deleteLater()
         del item
 
 
-def human_filesize(bytenum: int) -> str:
+def human_filesize(bytenum_int: int) -> str:
+    bytenum = float(bytenum_int)
     for t in ['', 'K', 'M', 'G', 'T']:
         if bytenum < 1000:
             break

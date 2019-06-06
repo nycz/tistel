@@ -5,24 +5,22 @@ from pathlib import Path
 import sys
 import time
 import typing
-from typing import cast, Dict, List, Optional, Set, Tuple
+from typing import cast, List, Optional, Set, Tuple
 
 import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtWidgets import QDialogButtonBox, QPushButton
 
 from jfti import jfti
 
-from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS, FILESIZE,
-                     PATH, TAGS, TAGSTATE, VISIBLE_TAGS)
-from .details_view import DetailsBox
-from .file_tree_view import DirectoryTree
 from .image_loading import ImageLoader, Indexer, set_rotation, THUMB_SIZE
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import ListWidget, Signal2
-from .tag_list import TagListWidget, TagListWidgetItem, TagState
+from .shared import (CACHE, CSS_FILE, DIMENSIONS, FILESIZE,
+                     ListWidget, PATH, Signal2, TAGS, TAGSTATE)
+from .sidebar import SideBar
+from .tag_list import TagState
+from .tagging_window import TaggingWindow
 
 
 class ProgressBar(QtWidgets.QProgressBar):
@@ -52,9 +50,13 @@ class ThumbView(ListWidget):
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if event.key() == Qt.Key_Right:
-            self.setCurrentItem(self.find_visible())
+            next_widget = self.find_visible()
+            if next_widget is not None:
+                self.setCurrentItem(next_widget)
         elif event.key() == Qt.Key_Left:
-            self.setCurrentItem(self.find_visible(reverse=True))
+            prev_widget = self.find_visible(reverse=True)
+            if prev_widget is not None:
+                self.setCurrentItem(prev_widget)
         else:
             super().keyPressEvent(event)
 
@@ -99,7 +101,7 @@ class MainWindow(QtWidgets.QWidget):
         layout.addWidget(self.progress)
 
         # Left column - tags/files/dates and info
-        self.left_column = LeftColumn(config.paths, self)
+        self.left_column = SideBar(config.paths, self)
         self.splitter.addWidget(self.left_column)
 
         # Middle column - thumbnails
@@ -212,110 +214,9 @@ class MainWindow(QtWidgets.QWidget):
         # Tagging dialog
         self.tagging_dialog = TaggingWindow(self)
 
-        def show_tagging_dialog() -> None:
-            current_item = self.thumb_view.currentItem()
-            selected_items = self.thumb_view.selectedItems()
-            self.tagging_dialog.set_up(self.tag_count, selected_items)
-            result = self.tagging_dialog.exec_()
-            if result:
-                slider_pos = self.thumb_view.verticalScrollBar()\
-                    .sliderPosition()
-                new_tag_count: typing.Counter[str] = Counter()
-                untagged_diff = 0
-                updated_files = {}
-                tags_to_add = self.tagging_dialog.get_tags_to_add()
-                tags_to_remove = self.tagging_dialog.get_tags_to_remove()
-                created_tags = tags_to_add - set(self.tag_count.keys())
-                progress_dialog = QtWidgets.QProgressDialog(
-                    'Tagging images...', 'Cancel',
-                    0, len(selected_items))
-                progress_dialog.setWindowModality(Qt.WindowModal)
-                progress_dialog.setMinimumDuration(0)
-
-                total = len(selected_items)
-                for n, item in enumerate(selected_items):
-                    progress_dialog.setLabelText(f'Tagging images... '
-                                                 f'({n}/{total})')
-                    progress_dialog.setValue(n)
-                    old_tags = item.data(TAGS)
-                    new_tags = (old_tags | tags_to_add) - tags_to_remove
-                    if old_tags != new_tags:
-                        added_tags = new_tags - old_tags
-                        removed_tags = old_tags - new_tags
-                        new_tag_count.update({t: 1 for t in added_tags})
-                        new_tag_count.update({t: -1 for t in removed_tags})
-                        path = item.data(PATH)
-                        try:
-                            jfti.set_tags(path, new_tags)
-                        except Exception:
-                            print('FAIL', path)
-                            raise
-                        item.setData(TAGS, new_tags)
-                        updated_files[item.data(PATH)] = new_tags
-                        if not old_tags and new_tags:
-                            untagged_diff -= 1
-                        elif old_tags and not new_tags:
-                            untagged_diff += 1
-                    if progress_dialog.wasCanceled():
-                        break
-                progress_dialog.setValue(len(selected_items))
-                if updated_files:
-                    # Update the cache
-                    if not CACHE.exists():
-                        print('WARNING: no cache! probably reload ??')
-                        return
-                    cache = json.loads(CACHE.read_text())
-                    cache['updated'] = time.time()
-                    img_cache = cache['images']
-                    for fname, tags in updated_files.items():
-                        path_str = str(fname)
-                        if path_str not in img_cache:
-                            print('WARNING: img not in cache ??')
-                            continue
-                        img_cache[path_str]['tags'] = list(tags)
-                    CACHE.write_text(json.dumps(cache))
-                    # Update the tag list
-                    self.tag_count.update(new_tag_count)
-                    untagged_item = self.left_column.tag_list.takeItem(0)
-                    untagged_item.setData(TAGS, (untagged_item.data(TAGS)
-                                                 + untagged_diff))
-                    tag_items_to_delete = []
-                    for i in range(self.left_column.tag_list.count()):
-                        tag_item = self.left_column.tag_list.item(i)
-                        tag = tag_item.data(PATH)
-                        diff = new_tag_count.get(tag, 0)
-                        if diff != 0:
-                            new_count = tag_item.data(TAGS) + diff
-                            if new_count <= 0:
-                                del self.tag_count[tag]
-                                tag_items_to_delete.append(i)
-                            tag_item.setData(TAGS, new_count)
-                    # Get rid of the items in reverse order
-                    # to not mess up the numbers
-                    for i in reversed(tag_items_to_delete):
-                        self.left_column.tag_list.takeItem(i)
-                    for tag in created_tags:
-                        count = new_tag_count.get(tag, 0)
-                        if count > 0:
-                            self.left_column.create_tag(tag, count)
-                    self.left_column.tag_list.insertItem(0, untagged_item)
-                    self.left_column.sort_tags()
-                    self.update_tag_filter()
-                    # Go back to the same selected items as before (if visible)
-                    for item in self.thumb_view.selectedItems():
-                        if (item.isHidden() or item not in selected_items) \
-                                and item.isSelected():
-                            item.setSelected(False)
-                    for item in selected_items:
-                        if not item.isHidden() and not item.isSelected():
-                            item.setSelected(True)
-                    self.thumb_view.setCurrentItem(current_item)
-                    self.thumb_view.verticalScrollBar()\
-                        .setSliderPosition(slider_pos)
-
         cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
                                              self).activated
-             ).connect(show_tagging_dialog)
+             ).connect(self.show_tagging_dialog)
 
         # Reloading
         self.indexer = Indexer()
@@ -348,6 +249,109 @@ class MainWindow(QtWidgets.QWidget):
         self.thumbnails_done = 0
         self.show()
         self.index_images()
+
+    def show_tagging_dialog(self) -> None:
+        current_item = self.thumb_view.currentItem()
+        selected_items = self.thumb_view.selectedItems()
+        self.tagging_dialog.set_up(self.tag_count, selected_items)
+        result = self.tagging_dialog.exec_()
+        if not result:
+            return
+        slider_pos = self.thumb_view.verticalScrollBar()\
+            .sliderPosition()
+        new_tag_count: typing.Counter[str] = Counter()
+        untagged_diff = 0
+        updated_files = {}
+        tags_to_add = self.tagging_dialog.get_tags_to_add()
+        tags_to_remove = self.tagging_dialog.get_tags_to_remove()
+        created_tags = tags_to_add - set(self.tag_count.keys())
+        progress_dialog = QtWidgets.QProgressDialog(
+            'Tagging images...', 'Cancel',
+            0, len(selected_items))
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+
+        total = len(selected_items)
+        for n, item in enumerate(selected_items):
+            progress_dialog.setLabelText(f'Tagging images... '
+                                         f'({n}/{total})')
+            progress_dialog.setValue(n)
+            old_tags = item.data(TAGS)
+            new_tags = (old_tags | tags_to_add) - tags_to_remove
+            if old_tags != new_tags:
+                added_tags = new_tags - old_tags
+                removed_tags = old_tags - new_tags
+                new_tag_count.update({t: 1 for t in added_tags})
+                new_tag_count.update({t: -1 for t in removed_tags})
+                path = item.data(PATH)
+                try:
+                    jfti.set_tags(path, new_tags)
+                except Exception:
+                    print('FAIL', path)
+                    raise
+                item.setData(TAGS, new_tags)
+                updated_files[item.data(PATH)] = new_tags
+                if not old_tags and new_tags:
+                    untagged_diff -= 1
+                elif old_tags and not new_tags:
+                    untagged_diff += 1
+            if progress_dialog.wasCanceled():
+                break
+        progress_dialog.setValue(len(selected_items))
+        if not updated_files:
+            return
+        # Update the cache
+        if not CACHE.exists():
+            print('WARNING: no cache! probably reload ??')
+            return
+        cache = json.loads(CACHE.read_text())
+        cache['updated'] = time.time()
+        img_cache = cache['images']
+        for fname, tags in updated_files.items():
+            path_str = str(fname)
+            if path_str not in img_cache:
+                print('WARNING: img not in cache ??')
+                continue
+            img_cache[path_str]['tags'] = list(tags)
+        CACHE.write_text(json.dumps(cache))
+        # Update the tag list
+        self.tag_count.update(new_tag_count)
+        untagged_item = self.left_column.tag_list.takeItem(0)
+        untagged_item.setData(TAGS, (untagged_item.data(TAGS)
+                                     + untagged_diff))
+        tag_items_to_delete = []
+        for i in range(self.left_column.tag_list.count()):
+            tag_item = self.left_column.tag_list.item(i)
+            tag = tag_item.data(PATH)
+            diff = new_tag_count.get(tag, 0)
+            if diff != 0:
+                new_count = tag_item.data(TAGS) + diff
+                if new_count <= 0:
+                    del self.tag_count[tag]
+                    tag_items_to_delete.append(i)
+                tag_item.setData(TAGS, new_count)
+        # Get rid of the items in reverse order
+        # to not mess up the numbers
+        for i in reversed(tag_items_to_delete):
+            self.left_column.tag_list.takeItem(i)
+        for tag in created_tags:
+            count = new_tag_count.get(tag, 0)
+            if count > 0:
+                self.left_column.create_tag(tag, count)
+        self.left_column.tag_list.insertItem(0, untagged_item)
+        self.left_column.sort_tags()
+        self.update_tag_filter()
+        # Go back to the same selected items as before (if visible)
+        for item in self.thumb_view.selectedItems():
+            if (item.isHidden() or item not in selected_items) \
+                    and item.isSelected():
+                item.setSelected(False)
+        for item in selected_items:
+            if not item.isHidden() and not item.isSelected():
+                item.setSelected(True)
+        self.thumb_view.setCurrentItem(current_item)
+        self.thumb_view.verticalScrollBar()\
+            .setSliderPosition(slider_pos)
 
     def make_event_filter(self) -> None:
         class MainWindowEventFilter(QtCore.QObject):
@@ -478,262 +482,6 @@ class MainWindow(QtWidgets.QWidget):
         else:
             self.thumb_view.setCurrentRow(-1)
             self.image_view.setPixmap(None)
-
-
-class TaggingWindow(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget) -> None:
-        super().__init__(parent)
-        self.original_tags: typing.Counter[str] = Counter()
-        self.tags_to_add: Set[str] = set()
-        self.tags_to_remove: Set[str] = set()
-        self.resize(300, 500)
-
-        # Main layout
-        layout = QtWidgets.QVBoxLayout(self)
-        self.heading_label = QtWidgets.QLabel('Change tags')
-        self.heading_label.setObjectName('dialog_heading')
-        layout.addWidget(self.heading_label)
-
-        # Input
-        input_box = QtWidgets.QHBoxLayout()
-        self.tag_input = QtWidgets.QLineEdit(self)
-        input_box.addWidget(self.tag_input)
-        self.add_tag_button = QtWidgets.QPushButton('Add tag', self)
-        input_box.addWidget(self.add_tag_button)
-        layout.addLayout(input_box)
-
-        def update_add_button(text: str) -> None:
-            tags = {item.data(PATH) for item in self.tag_list}
-            tag = text.strip()
-            self.add_tag_button.setEnabled(bool(tag) and tag not in tags)
-
-        cast(pyqtSignal, self.tag_input.textChanged).connect(update_add_button)
-        cast(pyqtSignal, self.tag_input.returnPressed).connect(self.add_tag)
-        cast(pyqtSignal, self.add_tag_button.clicked).connect(self.add_tag)
-
-        # Tag list
-        self.tag_list = ListWidget(self)
-        self.tag_list.sort_by_alpha = True
-        layout.addWidget(self.tag_list)
-
-        # Buttons
-        button_box = QDialogButtonBox(self)
-        button_box.addButton(QDialogButtonBox.Cancel)
-        self.accept_button = button_box.addButton('Apply to images',
-                                                  QDialogButtonBox.AcceptRole)
-        cast(pyqtSignal, button_box.accepted).connect(self.accept)
-        cast(pyqtSignal, button_box.rejected).connect(self.reject)
-        layout.addWidget(button_box)
-
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() == Qt.Key_Return:
-            if event.modifiers() & Qt.ControlModifier:
-                self.accept()
-        else:
-            super().keyPressEvent(event)
-
-    def get_tags_to_add(self) -> Set[str]:
-        out = set()
-        for item in self.tag_list:
-            if item.checkState() == Qt.Checked:
-                out.add(item.data(PATH))
-        return out
-
-    def get_tags_to_remove(self) -> Set[str]:
-        out = set()
-        for item in self.tag_list:
-            if item.checkState() == Qt.Unchecked:
-                out.add(item.data(PATH))
-        return out
-
-    def add_tag(self) -> None:
-        if not self.add_tag_button.isEnabled():
-            return
-        tag = self.tag_input.text().strip()
-        if tag:
-            tags = {item.data(PATH) for item in self.tag_list}
-            if tag not in tags:
-                item = TagListWidgetItem(f'{tag} (NEW)')
-                item.setData(PATH, tag)
-                item.setData(TAGS, (0, 0))
-                item.setCheckState(Qt.Checked)
-                self.tag_list.insertItem(0, item)
-            self.tag_input.clear()
-
-    def set_up(self, tags: typing.Counter[str],
-               images: List[QtWidgets.QListWidgetItem]) -> None:
-        self.original_tags = tags
-        self.accept_button.setText(f'Apply to {len(images)} images')
-        self.tag_input.clear()
-        self.tag_list.clear()
-        tag_counter: typing.Counter[str] = Counter()
-        for img in images:
-            img_tags = img.data(TAGS)
-            tag_counter.update(img_tags)
-        for tag, total in tags.items():
-            count = tag_counter.get(tag, 0)
-            item = TagListWidgetItem(f'{tag} ({count}/{total})')
-            item.setData(PATH, tag)
-            item.setData(TAGS, (count, total))
-            if count == len(images):
-                item.setCheckState(Qt.Checked)
-            elif count == 0:
-                item.setCheckState(Qt.Unchecked)
-            else:
-                item.setCheckState(Qt.PartiallyChecked)
-            self.tag_list.addItem(item)
-        self.tag_list.sortItems()
-        self.tag_input.setFocus()
-
-
-class SortButton(QtWidgets.QPushButton):
-    def __init__(self, text: str, parent: QtWidgets.QWidget) -> None:
-        super().__init__(text, parent)
-        self.reversed = False
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == Qt.RightButton:
-            self.reversed = not self.reversed
-            self.setText(self.text()[::-1])
-        elif event.button() == Qt.LeftButton:
-            self.setChecked(True)
-        self.pressed.emit()
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        return
-
-
-class LeftColumn(QtWidgets.QWidget):
-    tag_selected = QtCore.pyqtSignal(str)
-
-    def __init__(self, paths: Set[Path], parent: QtWidgets.QWidget) -> None:
-        super().__init__(parent)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Splitter between tabs and info
-        self.splitter = QtWidgets.QSplitter(Qt.Vertical, self)
-        layout.addWidget(self.splitter)
-
-        # Tab widget
-        self.tab_widget = QtWidgets.QTabWidget(self)
-        self.tab_widget.setFocusPolicy(Qt.NoFocus)
-        self.splitter.addWidget(self.tab_widget)
-        self.splitter.setStretchFactor(0, 1)
-
-        # Tag list box
-        tag_list_box = QtWidgets.QWidget(self.tab_widget)
-        tag_list_box.setObjectName('tag_list_box')
-        tag_list_box_layout = QtWidgets.QVBoxLayout(tag_list_box)
-        tag_list_box_layout.setContentsMargins(0, 0, 0, 0)
-        tag_list_box_layout.setSpacing(0)
-        self.tab_widget.addTab(tag_list_box, 'Tags')
-
-        # Tag list buttons
-        tag_buttons_hbox = QtWidgets.QHBoxLayout()
-        tag_buttons_hbox.setContentsMargins(0, 0, 0, 0)
-        tag_list_box_layout.addLayout(tag_buttons_hbox)
-        clear_button = QPushButton('Clear tags', tag_list_box)
-        clear_button.setObjectName('clear_button')
-        sort_buttons = QtWidgets.QButtonGroup(tag_list_box)
-        sort_buttons.setExclusive(True)
-        sort_alpha_button = SortButton('a-z', tag_list_box)
-        sort_alpha_button.setObjectName('sort_button')
-        sort_alpha_button.setCheckable(True)
-        sort_alpha_button.setChecked(True)
-        sort_count_button = SortButton('0-9', tag_list_box)
-        sort_count_button.setObjectName('sort_button')
-        sort_count_button.setCheckable(True)
-        sort_buttons.addButton(sort_alpha_button)
-        sort_buttons.addButton(sort_count_button)
-
-        tag_buttons_hbox.addWidget(clear_button)
-        tag_buttons_hbox.addStretch()
-        tag_buttons_hbox.addWidget(sort_alpha_button)
-        tag_buttons_hbox.addWidget(sort_count_button)
-
-        # Tag list
-        self.tag_list = TagListWidget(tag_list_box)
-        self.tag_list.setObjectName('tag_list')
-        self.tag_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self.tag_list.setFocusPolicy(Qt.NoFocus)
-        tag_list_box_layout.addWidget(self.tag_list)
-
-        def sort_button_pressed(button: SortButton) -> None:
-            if not button.isChecked():
-                return
-            self.tag_list.sort_by_alpha = (button == sort_alpha_button)
-            self.tag_list.sortItems(Qt.DescendingOrder
-                                    if button.reversed else Qt.AscendingOrder)
-
-        sort_alpha_button.pressed.connect(
-            lambda: sort_button_pressed(sort_alpha_button))
-        sort_count_button.pressed.connect(
-            lambda: sort_button_pressed(sort_count_button))
-        self.sort_alpha_button = sort_alpha_button
-        self.sort_count_button = sort_count_button
-
-        def clear_tag_filters():
-            for tag in self.tag_list:
-                tag.setData(TAGSTATE, TagState.DEFAULT)
-            self.tag_list.tag_state_updated.emit()
-
-        clear_button.clicked.connect(clear_tag_filters)
-
-        # Files tab
-        self.dir_tree = DirectoryTree(paths, self)
-        self.tab_widget.addTab(self.dir_tree, 'Files')
-
-        # Dates tab
-        self.tab_widget.addTab(QtWidgets.QLabel('todo'), 'Dates')
-
-        # Info widget
-        self.info_box = DetailsBox(self)
-        self.splitter.addWidget(self.info_box)
-        self.splitter.setStretchFactor(1, 0)
-
-        # Buttons at the bottom
-        bottom_row = QtWidgets.QHBoxLayout()
-        self.settings_button = QtWidgets.QPushButton('Settings', self)
-        bottom_row.addWidget(self.settings_button)
-        self.reload_button = QtWidgets.QPushButton('Reload', self)
-        bottom_row.addWidget(self.reload_button)
-        layout.addLayout(bottom_row)
-
-    @staticmethod
-    def _tag_format(tag: str, visible: int, total: int) -> str:
-        return f'{tag or "<Untagged>"}   ({visible}/{total})'
-
-    def create_tag(self, tag: str, count: int) -> None:
-        item = TagListWidgetItem(self._tag_format(tag, count, count))
-        item.setData(PATH, tag)
-        item.setData(TAGS, count)
-        item.setData(VISIBLE_TAGS, count)
-        item.setData(TAGSTATE, TagState.DEFAULT)
-        self.tag_list.addItem(item)
-
-    def set_tags(self, tags: List[Tuple[str, int]]) -> None:
-        self.tag_list.clear()
-        for tag, count in tags:
-            self.create_tag(tag, count)
-        untagged = self.tag_list.takeItem(0)
-        self.tag_list.insertItem(0, untagged)
-        self.sort_tags()
-
-    def sort_tags(self) -> None:
-        if self.sort_alpha_button.isChecked():
-            button = self.sort_alpha_button
-        else:
-            button = self.sort_count_button
-        self.tag_list.sortItems(Qt.DescendingOrder
-                                if button.reversed else Qt.AscendingOrder)
-
-    def update_tags(self, tag_count: Dict[str, int]) -> None:
-        for item in self.tag_list:
-            tag = item.data(PATH)
-            new_count = tag_count[tag]
-            item.setData(VISIBLE_TAGS, new_count)
-            item.setText(self._tag_format(tag, new_count, item.data(TAGS)))
 
 
 def main() -> int:
