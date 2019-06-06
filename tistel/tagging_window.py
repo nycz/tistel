@@ -1,6 +1,8 @@
+from pathlib import Path
 import typing
-from typing import cast, Counter, List, Set
+from typing import cast, Counter, Dict, Iterable, List, Set, Tuple
 
+from jfti import jfti
 from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import QDialogButtonBox
@@ -13,8 +15,6 @@ class TaggingWindow(QtWidgets.QDialog):
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         self.original_tags: Counter[str] = Counter()
-        self.tags_to_add: Set[str] = set()
-        self.tags_to_remove: Set[str] = set()
         self.resize(300, 500)
 
         # Main layout
@@ -113,3 +113,49 @@ class TaggingWindow(QtWidgets.QDialog):
             self.tag_list.addItem(item)
         self.tag_list.sortItems()
         self.tag_input.setFocus()
+
+    def tag_images(self, items: List[QtWidgets.QListWidgetItem]
+                   ) -> Tuple[int, Dict[Path, Set[str]],
+                              Counter[str], Set[str]]:
+        # Progress dialog
+        progress_dialog = QtWidgets.QProgressDialog(
+            'Tagging images...', 'Cancel', 0, len(items))
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+        # Info about the data we're working with
+        total = len(items)
+        tags_to_add = self.get_tags_to_add()
+        tags_to_remove = self.get_tags_to_remove()
+        created_tags = tags_to_add - set(self.original_tags.keys())
+        # Info about the changes
+        new_tag_count: Counter[str] = Counter()
+        untagged_diff = 0
+        updated_files = {}
+        # Tag the files
+        for n, item in enumerate(items):
+            progress_dialog.setLabelText(f'Tagging images... '
+                                         f'({n}/{total})')
+            progress_dialog.setValue(n)
+            old_tags = item.data(TAGS)
+            new_tags = (old_tags | tags_to_add) - tags_to_remove
+            if old_tags != new_tags:
+                added_tags = new_tags - old_tags
+                removed_tags = old_tags - new_tags
+                new_tag_count.update({t: 1 for t in added_tags})
+                new_tag_count.update({t: -1 for t in removed_tags})
+                path = item.data(PATH)
+                try:
+                    jfti.set_tags(path, new_tags)
+                except Exception:
+                    print('FAIL', path)
+                    raise
+                item.setData(TAGS, new_tags)
+                updated_files[item.data(PATH)] = new_tags
+                if not old_tags and new_tags:
+                    untagged_diff -= 1
+                elif old_tags and not new_tags:
+                    untagged_diff += 1
+            if progress_dialog.wasCanceled():
+                break
+        progress_dialog.setValue(total)
+        return untagged_diff, updated_files, new_tag_count, created_tags
