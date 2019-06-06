@@ -17,6 +17,7 @@ from jfti import jfti
 from .shared import (CACHE, CONFIG, CSS_FILE, DIMENSIONS, FILESIZE,
                      PATH, TAGS, TAGSTATE, VISIBLE_TAGS)
 from .details_view import DetailsBox
+from .file_tree_view import DirectoryTree
 from .image_loading import ImageLoader, Indexer, set_rotation, THUMB_SIZE
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
@@ -98,7 +99,7 @@ class MainWindow(QtWidgets.QWidget):
         layout.addWidget(self.progress)
 
         # Left column - tags/files/dates and info
-        self.left_column = LeftColumn(self)
+        self.left_column = LeftColumn(config.paths, self)
         self.splitter.addWidget(self.left_column)
 
         # Middle column - thumbnails
@@ -401,7 +402,6 @@ class MainWindow(QtWidgets.QWidget):
             item_text = path.name if self.config.show_names else None
             item = QtWidgets.QListWidgetItem(self.default_icon, item_text)
             self.thumb_view.addItem(item)
-            item.setBackground(QtGui.QBrush(Qt.red))
             item.setData(PATH, path)
             item.setData(FILESIZE, data['size'])
             item.setData(TAGS, set(data['tags']))
@@ -425,6 +425,7 @@ class MainWindow(QtWidgets.QWidget):
             self.progress.show()
         else:
             self.progress.hide()
+        self.left_column.dir_tree.update_paths(self.config.paths)
 
     def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
         if batch != self.batch:
@@ -605,7 +606,7 @@ class SortButton(QtWidgets.QPushButton):
 class LeftColumn(QtWidgets.QWidget):
     tag_selected = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent: QtWidgets.QWidget) -> None:
+    def __init__(self, paths: Set[Path], parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -680,7 +681,8 @@ class LeftColumn(QtWidgets.QWidget):
         clear_button.clicked.connect(clear_tag_filters)
 
         # Files tab
-        self.tab_widget.addTab(QtWidgets.QLabel('todo'), 'Files')
+        self.dir_tree = DirectoryTree(paths, self)
+        self.tab_widget.addTab(self.dir_tree, 'Files')
 
         # Dates tab
         self.tab_widget.addTab(QtWidgets.QLabel('todo'), 'Dates')

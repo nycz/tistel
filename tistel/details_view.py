@@ -3,7 +3,7 @@ from typing import Optional
 from PyQt5 import QtWidgets
 
 from .shared import (clear_layout, DIMENSIONS, FILESIZE,
-                     human_filesize, Icon, PATH, TAGS)
+                     human_filesize, IconWidget, PATH, TAGS)
 
 
 class DetailsBox(QtWidgets.QScrollArea):
@@ -46,7 +46,7 @@ class DetailsBox(QtWidgets.QScrollArea):
             tags = item.data(TAGS)
             clear_layout(self.tag_box)
             for n, tag in enumerate(tags):
-                tag_icon = Icon('tistel/icons/tag.svg', 16, self)
+                tag_icon = IconWidget('tag', 16, self)
                 tag_icon.setObjectName('tag_icon')
                 self.tag_box.addWidget(tag_icon, n, 0)
                 label = QtWidgets.QLabel(tag, self)

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, Iterator, Type, TypeVar
+from typing import Callable, Iterator, Type, TypeVar, Union
 from typing_extensions import Protocol
 
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
@@ -28,15 +28,35 @@ class ListWidget(QtWidgets.QListWidget):
             yield self.item(i)
 
 
-class Icon(QtSvg.QSvgWidget):
-    def __init__(self, path: str, resolution: int,
+class IconWidget(QtSvg.QSvgWidget):
+    def __init__(self, name: str, resolution: int,
                  parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         self.setFixedSize(QtCore.QSize(resolution, resolution))
-        with open(path, 'rb') as f:
+        with open(f'tistel/icons/{name}.svg', 'rb') as f:
             data = f.read()
         data = data.replace(b'stroke="currentColor"', b'stroke="#eee"')
         self.load(data)
+
+
+def make_svg_icon(name: str, resolution: int,
+                  color: Union[QtGui.QColor, Qt.GlobalColor] = Qt.white
+                  ) -> QtGui.QIcon:
+    if not isinstance(color, QtGui.QColor):
+        color = QtGui.QColor(color)
+    color_str = f'{color.red():0>2x}{color.green():0>2x}{color.blue():0>2x}'
+    with open(f'tistel/icons/{name}.svg', 'rb') as f:
+        data = f.read()
+    data = data.replace(b'stroke="currentColor"',
+                        b'stroke="#' + color_str.encode() + b'"')
+    renderer = QtSvg.QSvgRenderer(data)
+    pixmap = QtGui.QPixmap(resolution, resolution)
+    pixmap.fill(Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    icon = QtGui.QIcon(pixmap)
+    return icon
 
 
 def clear_layout(layout: QtWidgets.QLayout) -> None:

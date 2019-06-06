@@ -66,6 +66,10 @@ class TagListWidget(ListWidget):
         self.setMouseTracking(True)
         self.last_item: Optional[QtWidgets.QListWidgetItem] = None
 
+    def clear(self) -> None:
+        self.last_item = None
+        super().clear()
+
     @pyqtProperty(QColor)
     def default_color(self) -> QColor:
         return self._default_color

@@ -155,6 +155,17 @@ QScrollArea {
   font-style: italic;
 }
 
+/* Files tab */
+
+QTreeWidget {
+  background: #111;
+  color: white;
+  font-size: 14px;
+}
+
+
+/* Splitters */
+
 QSplitter::handle {
   background: #555;
 }
@@ -164,6 +175,9 @@ QSplitter::handle:horizontal {
 QSplitter::handle:vertical {
   height: 8px;
 }
+
+
+/* Progress bar */
 
 QProgressBar {
   border: 0;
@@ -175,6 +189,8 @@ QProgressBar::chunk {
   background: #444;
 }
 
+
+/* Scroll bars */
 
 QScrollBar:vertical {
     background: #080808;
