@@ -33,7 +33,8 @@ class IconWidget(QtSvg.QSvgWidget):
                  parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         self.setFixedSize(QtCore.QSize(resolution, resolution))
-        with open(f'tistel/icons/{name}.svg', 'rb') as f:
+        path = LOCAL_PATH / 'icons' / f'{name}.svg'
+        with open(path, 'rb') as f:
             data = f.read()
         data = data.replace(b'stroke="currentColor"', b'stroke="#eee"')
         self.load(data)
@@ -45,7 +46,8 @@ def make_svg_icon(name: str, resolution: int,
     if not isinstance(color, QtGui.QColor):
         color = QtGui.QColor(color)
     color_str = f'{color.red():0>2x}{color.green():0>2x}{color.blue():0>2x}'
-    with open(f'tistel/icons/{name}.svg', 'rb') as f:
+    path = LOCAL_PATH / 'icons' / f'{name}.svg'
+    with open(path, 'rb') as f:
         data = f.read()
     data = data.replace(b'stroke="currentColor"',
                         b'stroke="#' + color_str.encode() + b'"')
