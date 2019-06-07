@@ -82,8 +82,9 @@ class TagListWidget(ListWidget):
 
     def set_current_thumb(self, current: QtWidgets.QListWidgetItem,
                           previous: QtWidgets.QListWidgetItem) -> None:
-        self.selected_item_tags = current.data(TAGS)
-        self.update()
+        if current is not None:
+            self.selected_item_tags = current.data(TAGS)
+            self.update()
 
     def clear(self) -> None:
         self.last_item = None
