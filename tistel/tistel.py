@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import Counter
 import json
+import logging
 from pathlib import Path
 import sys
 import time
@@ -68,9 +69,14 @@ class MainWindow(QtWidgets.QWidget):
                            prev: QtWidgets.QListWidgetItem) -> None:
             if current and not current.isHidden():
                 path = current.data(PATH)
-                with open(path, 'rb') as f:
-                    exif = exifread.process_file(f, stop_tag='Orientation')
-                orientation = exif.get('Image Orientation')
+                try:
+                    with open(path, 'rb') as f:
+                        exif = exifread.process_file(f, stop_tag='Orientation')
+                    orientation = exif.get('Image Orientation')
+                except Exception:
+                    logging.exception(f'Failed to get exif orientation '
+                                      f'for {path!r}')
+                    orientation = None
                 pixmap: Optional[QtGui.QPixmap] = None
                 if orientation:
                     transform = set_rotation(orientation)
@@ -306,6 +312,7 @@ class MainWindow(QtWidgets.QWidget):
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
+    logging.basicConfig()
 
     args = parser.parse_args()
 
