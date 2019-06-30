@@ -112,6 +112,23 @@ class MainWindow(QtWidgets.QWidget):
         self.splitter.addWidget(self.image_view)
         self.splitter.setStretchFactor(2, 1)
 
+        # Toggle fullscreen
+        def toggle_fullscreen() -> None:
+            if self.thumb_view.isHidden():
+                self.thumb_view.show()
+                self.sidebar.show()
+            else:
+                self.config.main_splitter = self.splitter.sizes()
+                self.config.side_splitter = \
+                    self.sidebar.splitter.sizes()
+                self.config.save()
+                self.thumb_view.hide()
+                self.sidebar.hide()
+
+        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('f'),
+                                             self).activated
+             ).connect(toggle_fullscreen)
+
         # Settings dialog
         self.settings_dialog = SettingsWindow(self)
 
@@ -248,10 +265,11 @@ class MainWindow(QtWidgets.QWidget):
             def eventFilter(self_, obj: QtCore.QObject,
                             event: QtCore.QEvent) -> bool:
                 if event.type() == QtCore.QEvent.Close:
-                    self.config.main_splitter = self.splitter.sizes()
-                    self.config.side_splitter = \
-                        self.sidebar.splitter.sizes()
-                    self.config.save()
+                    if self.thumb_view.isVisible():
+                        self.config.main_splitter = self.splitter.sizes()
+                        self.config.side_splitter = \
+                            self.sidebar.splitter.sizes()
+                        self.config.save()
                 return False
         self.close_filter = MainWindowEventFilter()
         self.installEventFilter(self.close_filter)
