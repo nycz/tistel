@@ -35,6 +35,8 @@ class DirectoryTree(QtWidgets.QTreeWidget):
                     recurse(child, item, depth + 1)
 
         for directory in directories:
+            if not directory.exists():
+                continue
             item = QtWidgets.QTreeWidgetItem([directory.name])
             item.setIcon(0, self.icon)
             recurse(directory, item, 0)
