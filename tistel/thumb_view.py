@@ -2,13 +2,14 @@ import json
 from pathlib import Path
 from typing import cast, Counter, List, Optional, Tuple
 
+from jfti import jfti
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 
 from .image_loading import ImageLoader, THUMB_SIZE
 from .settings import Settings
-from .shared import (CACHE, DIMENSIONS, FILESIZE, ListWidget,
-                     PATH, Signal2, TAGS)
+from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILESIZE,
+                     ListWidget, PATH, Signal2, TAGS)
 
 
 class ProgressBar(QtWidgets.QProgressBar):
@@ -133,6 +134,7 @@ class ThumbView(ListWidget):
             item.setData(FILESIZE, data['size'])
             item.setData(TAGS, set(data['tags']))
             item.setData(DIMENSIONS, (data['w'], data['h']))
+            item.setData(FILEFORMAT, jfti.identify_image_format(path))
             imgs.append((n, skip_thumb_cache, path))
             n += 1
             tag_count.update(data['tags'])

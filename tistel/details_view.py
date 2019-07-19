@@ -1,8 +1,9 @@
 from typing import Optional
 
+from jfti import jfti
 from PyQt5 import QtWidgets
 
-from .shared import (clear_layout, DIMENSIONS, FILESIZE,
+from .shared import (clear_layout, DIMENSIONS, FILEFORMAT, FILESIZE,
                      human_filesize, IconWidget, PATH, TAGS)
 
 
@@ -26,6 +27,10 @@ class DetailsBox(QtWidgets.QScrollArea):
         layout.addWidget(self.dimensions)
         self.tag_box = QtWidgets.QGridLayout()
         layout.addLayout(self.tag_box)
+        self.fileformat = QtWidgets.QLabel(self)
+        self.fileformat.setWordWrap(True)
+        self.fileformat.setStyleSheet('color: red')
+        layout.addWidget(self.fileformat)
         layout.addStretch()
 
     def set_info(self, item: Optional[QtWidgets.QListWidgetItem]) -> None:
@@ -39,6 +44,12 @@ class DetailsBox(QtWidgets.QScrollArea):
             path = item.data(PATH)
             self.directory.setText(f'<b>Directory:</b> {path.parent}')
             self.filename.setText(f'<b>Name:</b> {path.name}')
+            fmt = item.data(FILEFORMAT)
+            if jfti.image_format_mismatch(path, fmt):
+                self.fileformat.setText(f'<b>Mismatching format:</b> '
+                                        f'{fmt.name}')
+            else:
+                self.fileformat.clear()
             width, height = item.data(DIMENSIONS)
             self.dimensions.setText(f'<b>Dimensions:</b> {width} x {height}')
             size = item.data(FILESIZE)
