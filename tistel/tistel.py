@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 import typing
-from typing import cast, Optional, Set
+from typing import cast, List, Optional, Set
 
 import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
@@ -48,7 +48,7 @@ class MainWindow(QtWidgets.QWidget):
         layout.addWidget(progress)
 
         # Left column - tags/files/dates and info
-        self.sidebar = SideBar(config.paths, self)
+        self.sidebar = SideBar(config, self)
         self.splitter.addWidget(self.sidebar)
 
         # Middle column - thumbnails
@@ -136,18 +136,20 @@ class MainWindow(QtWidgets.QWidget):
             self.settings_dialog.set_up(self.config)
             result = self.settings_dialog.exec_()
             if result == QtWidgets.QDialog.Accepted:
-                old_config = self.config
-                self.config = self.settings_dialog.config
-                if old_config != self.config:
+                new_config = self.settings_dialog.config
+                if new_config != self.config:
+                    update_paths = (new_config.paths != self.config.paths)
+                    update_names = (new_config.show_names != self.config.show_names)
+                    self.config.update(new_config)
                     self.config.save()
                     if self.settings_dialog.clear_cache:
                         CACHE.unlink()
                     skip_thumb_cache = self.settings_dialog.reset_thumbnails
-                    if old_config.paths != self.config.paths:
+                    if update_paths:
                         self.index_images(skip_thumb_cache)
                     elif skip_thumb_cache:
                         self.load_index(True)
-                    if old_config.show_names != self.config.show_names:
+                    if update_names:
                         for item in self.thumb_view:
                             item.setText(item.data(PATH).name
                                          if self.config.show_names else None)
@@ -275,7 +277,7 @@ class MainWindow(QtWidgets.QWidget):
         self.installEventFilter(self.close_filter)
 
     def index_images(self, skip_thumb_cache: bool = False) -> None:
-        self.start_indexing.emit(self.config.paths, skip_thumb_cache)
+        self.start_indexing.emit(self.config.active_paths, skip_thumb_cache)
 
     def load_index(self, skip_thumb_cache: bool) -> None:
         self.indexer_progressbar.accept()
@@ -283,7 +285,7 @@ class MainWindow(QtWidgets.QWidget):
         if result is not None:
             tags, self.tag_count = result
             self.sidebar.set_tags(tags)
-        self.sidebar.dir_tree.update_paths(self.config.paths)
+        self.sidebar.dir_tree.update_paths(self.config.active_paths)
 
     def update_tag_filter(self) -> None:
         whitelist = set()
@@ -330,6 +332,9 @@ class MainWindow(QtWidgets.QWidget):
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--path', nargs='+', dest='paths',
+                        metavar='path', type=Path,
+                        help='Use these paths instead of the settings')
     logging.basicConfig()
 
     args = parser.parse_args()
@@ -348,7 +353,7 @@ def main() -> int:
     app.installEventFilter(event_filter)
     app.setStyleSheet(CSS_FILE.read_text())
 
-    config = Settings.load()
+    config = Settings.load(args.paths)
     window = MainWindow(config, event_filter.activation_event)
     app.setActiveWindow(window)
     sys.exit(app.exec_())

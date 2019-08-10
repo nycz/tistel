@@ -114,7 +114,7 @@ class ThumbView(ListWidget):
         imgs = []
         cache = json.loads(CACHE.read_text())
         tag_count: Counter[str] = Counter()
-        root_paths = [str(p) for p in self.config.paths]
+        root_paths = [str(p) for p in self.config.active_paths]
         n = 0
         untagged = 0
         for raw_path, data in sorted(cache['images'].items()):

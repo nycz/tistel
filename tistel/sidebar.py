@@ -7,8 +7,10 @@ from PyQt5.QtWidgets import QPushButton
 
 from .details_view import DetailsBox
 from .file_tree_view import DirectoryTree
+from .settings import Settings
 from .shared import PATH, TAGS, TAGSTATE, VISIBLE_TAGS
 from .tag_list import TagListWidget, TagListWidgetItem, TagState
+
 
 
 class SortButton(QtWidgets.QPushButton):
@@ -31,7 +33,7 @@ class SortButton(QtWidgets.QPushButton):
 class SideBar(QtWidgets.QWidget):
     tag_selected = QtCore.pyqtSignal(str)
 
-    def __init__(self, paths: Set[Path], parent: QtWidgets.QWidget) -> None:
+    def __init__(self, config: Settings, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -106,7 +108,7 @@ class SideBar(QtWidgets.QWidget):
         cast(pyqtSignal, clear_button.clicked).connect(clear_tag_filters)
 
         # Files tab
-        self.dir_tree = DirectoryTree(paths, self)
+        self.dir_tree = DirectoryTree(config.active_paths, self)
         self.tab_widget.addTab(self.dir_tree, 'Files')
 
         # Dates tab

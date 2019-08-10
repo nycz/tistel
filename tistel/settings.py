@@ -19,13 +19,19 @@ class Settings:
     _SIDE_SPLITTER_KEY = 'side_splitter'
 
     def __init__(self) -> None:
+        self.path_overrides: Set[Path] = set()
         self.paths: Set[Path] = set()
         self.show_names = True
         self.main_splitter: Optional[List[int]] = None
         self.side_splitter: Optional[List[int]] = None
 
+    @property
+    def active_paths(self) -> Set[Path]:
+        return (self.path_overrides or self.paths).copy()
+
     def copy(self: T) -> T:
         clone = self.__class__()
+        clone.path_overrides = self.path_overrides.copy()
         clone.paths = self.paths.copy()
         clone.show_names = self.show_names
         clone.main_splitter = self.main_splitter
@@ -42,14 +48,24 @@ class Settings:
         json_data = json.dumps(data, indent=2)
         CONFIG.write_text(json_data)
 
+    def update(self: T, other: T) -> None:
+        self.show_names = other.show_names
+        self.main_splitter = other.main_splitter
+        self.side_splitter = other.side_splitter
+        # Do this just in case some bozo has refs of these
+        self.path_overrides.clear()
+        self.path_overrides.update(other.path_overrides)
+        self.paths.clear()
+        self.paths.update(other.paths)
+
     @classmethod
-    def load(cls: Type[T]) -> T:
+    def load(cls: Type[T], path_overrides: Optional[List[Path]]) -> T:
         if not CONFIG.exists():
             if not CONFIG.parent.exists():
                 CONFIG.parent.mkdir(parents=True)
             default_config = cls()
             default_config.save()
-            return default_config
+            config = default_config
         else:
             config_data = json.loads(CONFIG.read_text())
             config = cls()
@@ -62,7 +78,9 @@ class Settings:
                 config.main_splitter = config_data[cls._MAIN_SPLITTER_KEY]
             if cls._SIDE_SPLITTER_KEY in config_data:
                 config.side_splitter = config_data[cls._SIDE_SPLITTER_KEY]
-            return config
+        if path_overrides is not None:
+            config.path_overrides = {p.resolve() for p in path_overrides}
+        return config
 
 
 class SettingsWindow(QtWidgets.QDialog):
@@ -76,6 +94,11 @@ class SettingsWindow(QtWidgets.QDialog):
         directories_box = QtWidgets.QGroupBox('Image directories', self)
         dirbox_layout = QtWidgets.QVBoxLayout(directories_box)
         layout.addWidget(directories_box)
+
+        # Path override notice
+        self.path_override_label = QtWidgets.QLabel(
+            'Tistel was loaded with custom paths! These can\'t be modified.')
+        dirbox_layout.addWidget(self.path_override_label)
 
         # Directory buttons
         hbox = QtWidgets.QHBoxLayout()
@@ -181,10 +204,21 @@ class SettingsWindow(QtWidgets.QDialog):
         self.show_names_checkbox.setCheckState(
             Qt.Checked if self.config.show_names else Qt.Unchecked)
         self.path_list.clear()
-        self.path_list.addItems(sorted(str(p) for p in config.paths))
+        self.path_list.addItems(sorted(str(p) for p in config.active_paths))
         # Reset action flags
         self.clear_cache_checkbox.setCheckState(Qt.Unchecked)
         self.regen_thumbnails_checkbox.setCheckState(Qt.Unchecked)
+        # Custom paths can't be changed (for now)
+        if self.config.path_overrides:
+            self.add_button.setEnabled(False)
+            self.remove_button.setEnabled(False)
+            self.path_list.setEnabled(False)
+            self.path_override_label.show()
+        else:
+            self.add_button.setEnabled(True)
+            self.remove_button.setEnabled(True)
+            self.path_list.setEnabled(True)
+            self.path_override_label.hide()
 
     def add_directory(self) -> None:
         roots = QtCore.QStandardPaths.standardLocations(
