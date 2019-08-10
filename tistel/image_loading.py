@@ -205,14 +205,18 @@ class Indexer(QtCore.QObject):
                 tags, (width, height) = extract_metadata(path)
             except OSError:
                 continue
-            cached_images[path_str] = {
-                'tags': tags,
-                'size': stat.st_size,
-                'w': width,
-                'h': height,
-                'mtime': stat.st_mtime,
-                'ctime': stat.st_ctime
-            }
+            except Exception as e:
+                # TODO: handle this better and log it
+                print(e)
+            else:
+                cached_images[path_str] = {
+                    'tags': tags,
+                    'size': stat.st_size,
+                    'w': width,
+                    'h': height,
+                    'mtime': stat.st_mtime,
+                    'ctime': stat.st_ctime
+                }
         self.set_max.emit(0)
         self.set_value.emit(0)
         if not CACHE.parent.exists():
