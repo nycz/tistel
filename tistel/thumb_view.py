@@ -98,9 +98,9 @@ class ThumbView(ListWidget):
         current = self.currentItem()
         if current:
             painter = QtGui.QPainter(self.viewport())
-            rect = self.visualItemRect(current).adjusted(10, 10, -11, -11)
+            rect = self.visualItemRect(current).adjusted(6, 6, -7, -7)
             pen = QtGui.QPen(QtGui.QColor('#1bf986'))
-            pen.setWidth(3)
+            pen.setWidth(2)
             pen.setJoinStyle(Qt.MiterJoin)
             painter.setPen(pen)
             painter.drawRect(rect)
