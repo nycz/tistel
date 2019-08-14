@@ -1,14 +1,69 @@
 from pathlib import Path
 import typing
-from typing import cast, Counter, Dict, Iterable, List, Set, Tuple
+from typing import Any, cast, Counter, Dict, Iterable, List, Set, Tuple
 
 from jfti import jfti
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
-from .shared import ListWidget, PATH, TAGS
-from .tag_list import TagListWidgetItem
+from .shared import ListWidget, ListWidgetItem, PATH, TAGS, TAG_COUNT
+
+
+def sort_tag_list_by_num_and_alpha(a: QtWidgets.QListWidgetItem,
+                                   b: QtWidgets.QListWidgetItem) -> bool:
+    def get_data(x: QtWidgets.QListWidgetItem) -> Tuple[Any, ...]:
+        # visible = x.data(TAG_COUNT)[0]
+        checked = x.checkState() == Qt.Unchecked
+        return (checked, x.data(PATH).lower(), *x.data(TAG_COUNT))
+
+    return get_data(a) < get_data(b)
+
+
+class TagInput(QtWidgets.QLineEdit):
+    tab_pressed = pyqtSignal(bool)
+
+    def event(self, raw_ev: QtCore.QEvent) -> bool:
+        if raw_ev.type() == QtCore.QEvent.KeyPress:
+            ev = cast(QtGui.QKeyEvent, raw_ev)
+            if ev.key() == Qt.Key_Backtab \
+                    and ev.modifiers() == Qt.ShiftModifier:
+                comp = self.completer()
+                if not comp.popup().isVisible():
+                    return False
+                if comp.currentRow() == 0:
+                    if self.text() != comp.currentCompletion():
+                        # We're at the prefix and wrapping to the end
+                        comp.setCurrentRow(comp.completionCount() - 1)
+                        comp.popup().setCurrentIndex(comp.currentIndex())
+                    else:
+                        # At the first post and showing the prefix
+                        comp.popup().setCurrentIndex(QtCore.QModelIndex())
+                else:
+                    comp.setCurrentRow(comp.currentRow() - 1)
+                    comp.popup().setCurrentIndex(comp.currentIndex())
+                return True
+            elif ev.key() == Qt.Key_Tab and ev.modifiers() == Qt.NoModifier:
+                comp = self.completer()
+                if not comp.popup().isVisible():
+                    return False
+                if self.text() != comp.currentCompletion():
+                    # At the prefix and moving forward
+                    comp.popup().setCurrentIndex(comp.currentIndex())
+                else:
+                    success = comp.setCurrentRow(comp.currentRow() + 1)
+                    if success:
+                        comp.popup().setCurrentIndex(comp.currentIndex())
+                    else:
+                        # Wrapping around and showing the prefix
+                        comp.setCurrentRow(0)
+                        comp.popup().setCurrentIndex(QtCore.QModelIndex())
+                return True
+            elif ev.key() == Qt.Key_Return:
+                self.completer().popup().hide()
+                cast(pyqtSignal, self.returnPressed).emit()
+                return True
+        return super().event(raw_ev)
 
 
 class TaggingWindow(QtWidgets.QDialog):
@@ -25,25 +80,30 @@ class TaggingWindow(QtWidgets.QDialog):
 
         # Input
         input_box = QtWidgets.QHBoxLayout()
-        self.tag_input = QtWidgets.QLineEdit(self)
+        self.tag_input = TagInput(self)
+        self.completer = QtWidgets.QCompleter(self)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchContains)
+        self.tag_input.setCompleter(self.completer)
         input_box.addWidget(self.tag_input)
         self.add_tag_button = QtWidgets.QPushButton('Add tag', self)
         input_box.addWidget(self.add_tag_button)
         layout.addLayout(input_box)
 
         def update_add_button(text: str) -> None:
-            tags = {item.data(PATH) for item in self.tag_list}
-            tag = text.strip()
-            self.add_tag_button.setEnabled(bool(tag) and tag not in tags)
+            self.add_tag_button.setEnabled(bool(text.strip()))
 
         cast(pyqtSignal, self.tag_input.textChanged).connect(update_add_button)
         cast(pyqtSignal, self.tag_input.returnPressed).connect(self.add_tag)
         cast(pyqtSignal, self.add_tag_button.clicked).connect(self.add_tag)
 
         # Tag list
+        layout.addWidget(QtWidgets.QLabel('All tags'))
         self.tag_list = ListWidget(self)
-        self.tag_list.sort_by_alpha = True
+        self.tag_list.sort_func = sort_tag_list_by_num_and_alpha
         layout.addWidget(self.tag_list)
+        cast(pyqtSignal, self.tag_list.itemChanged
+             ).connect(lambda _: self.tag_list.sortItems())
 
         # Buttons
         button_box = QDialogButtonBox(self)
@@ -80,14 +140,18 @@ class TaggingWindow(QtWidgets.QDialog):
             return
         tag = self.tag_input.text().strip()
         if tag:
-            tags = {item.data(PATH) for item in self.tag_list}
-            if tag not in tags:
-                item = TagListWidgetItem(f'{tag} (NEW)')
+            tags = {item.data(PATH): item for item in self.tag_list}
+            if tag in tags:
+                item = tags[tag]
+                item.setCheckState(Qt.Checked)
+            else:
+                item = ListWidgetItem(f'{tag} (NEW)')
                 item.setData(PATH, tag)
-                item.setData(TAGS, (0, 0))
+                item.setData(TAG_COUNT, (0, 0))
                 item.setCheckState(Qt.Checked)
                 self.tag_list.insertItem(0, item)
             self.tag_input.clear()
+            self.tag_list.sortItems()
 
     def set_up(self, tags: typing.Counter[str],
                images: List[QtWidgets.QListWidgetItem]) -> None:
@@ -99,11 +163,13 @@ class TaggingWindow(QtWidgets.QDialog):
         for img in images:
             img_tags = img.data(TAGS)
             tag_counter.update(img_tags)
+        model = QtCore.QStringListModel(tags.keys())
+        self.completer.setModel(model)
         for tag, total in tags.items():
             count = tag_counter.get(tag, 0)
-            item = TagListWidgetItem(f'{tag} ({count}/{total})')
+            item = ListWidgetItem(f'{tag} ({count}/{total})')
             item.setData(PATH, tag)
-            item.setData(TAGS, (count, total))
+            item.setData(TAG_COUNT, (count, total))
             if count == len(images):
                 item.setCheckState(Qt.Checked)
             elif count == 0:

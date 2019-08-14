@@ -1,5 +1,5 @@
 import enum
-from typing import cast, Optional
+from typing import cast, Optional, Set
 
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtProperty, Qt
@@ -71,11 +71,11 @@ class TagListWidget(ListWidget):
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
-        self.selected_item_tags = set()
+        self.selected_item_tags: Set[str] = set()
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
-        self.sort_by_alpha = True
+        self.sort_func = sort_tag_list_by_alpha
         self.setItemDelegate(TagListDelegate(self))
         self.setMouseTracking(True)
         self.last_item: Optional[QtWidgets.QListWidgetItem] = None
@@ -161,13 +161,15 @@ class TagListWidget(ListWidget):
                 self.tag_state_updated.emit()
 
 
-class TagListWidgetItem(QtWidgets.QListWidgetItem):
-    def __lt__(self, other: QtWidgets.QListWidgetItem) -> bool:
-        if cast(TagListWidget, self.listWidget()).sort_by_alpha:
-            self_data = (self.data(PATH).lower(), self.data(TAGS))
-            other_data = (other.data(PATH).lower(), other.data(TAGS))
-        else:
-            self_data = (self.data(TAGS), self.data(PATH).lower())
-            other_data = (other.data(TAGS), other.data(PATH).lower())
-        result: bool = self_data < other_data
-        return result
+def sort_tag_list_by_alpha(a: QtWidgets.QListWidgetItem,
+                                b: QtWidgets.QListWidgetItem) -> bool:
+    a_data = (a.data(PATH).lower(), a.data(TAGS))
+    b_data = (b.data(PATH).lower(), b.data(TAGS))
+    return a_data < b_data
+
+
+def sort_tag_list_by_tags(a: QtWidgets.QListWidgetItem,
+                               b: QtWidgets.QListWidgetItem) -> bool:
+    a_data = (a.data(TAGS), a.data(PATH).lower())
+    b_data = (b.data(TAGS), b.data(PATH).lower())
+    return a_data < b_data

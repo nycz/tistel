@@ -1,20 +1,25 @@
+import itertools
 from pathlib import Path
-from typing import Callable, Iterator, Type, TypeVar, Union
+from typing import (Any, Callable, cast, Iterator, Optional,
+                    Type, TypeVar, Union)
 from typing_extensions import Protocol
 
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
 
 
-PATH = Qt.UserRole
-DIMENSIONS = Qt.UserRole + 1
-FILESIZE = Qt.UserRole + 2
-TAGS = Qt.UserRole + 3
-TAGSTATE = Qt.UserRole + 4
-VISIBLE_TAGS = Qt.UserRole + 5
-DEFAULT_COLOR = Qt.UserRole + 6
-HOVERING = Qt.UserRole + 7
-FILEFORMAT = Qt.UserRole + 8
+_data_ids = itertools.count(start=Qt.UserRole)
+
+PATH = next(_data_ids)
+DIMENSIONS = next(_data_ids)
+FILESIZE = next(_data_ids)
+TAGS = next(_data_ids)
+TAGSTATE = next(_data_ids)
+TAG_COUNT = next(_data_ids)
+VISIBLE_TAGS = next(_data_ids)
+DEFAULT_COLOR = next(_data_ids)
+HOVERING = next(_data_ids)
+FILEFORMAT = next(_data_ids)
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
@@ -24,9 +29,25 @@ CSS_FILE = LOCAL_PATH / 'qt.css'
 
 
 class ListWidget(QtWidgets.QListWidget):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.sort_func: Optional[Callable[['ListWidgetItem',
+                                           'ListWidgetItem'], bool]] = None
+
     def __iter__(self) -> Iterator[QtWidgets.QListWidgetItem]:
         for i in range(self.count()):
             yield self.item(i)
+
+
+class ListWidgetItem(QtWidgets.QListWidgetItem):
+    def __lt__(self, other: QtWidgets.QListWidgetItem) -> bool:
+        result: bool
+        sort_func = cast(ListWidget, self.listWidget()).sort_func
+        if sort_func is not None:
+            result = sort_func(self, cast(ListWidgetItem, other))
+        else:
+            result = super().__lt__(other)
+        return result
 
 
 class IconWidget(QtSvg.QSvgWidget):

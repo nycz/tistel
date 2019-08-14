@@ -8,8 +8,9 @@ from PyQt5.QtWidgets import QPushButton
 from .details_view import DetailsBox
 from .file_tree_view import DirectoryTree
 from .settings import Settings
-from .shared import PATH, TAGS, TAGSTATE, VISIBLE_TAGS
-from .tag_list import TagListWidget, TagListWidgetItem, TagState
+from .shared import PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidgetItem
+from .tag_list import (TagListWidget, TagState, sort_tag_list_by_alpha,
+                       sort_tag_list_by_tags)
 
 
 
@@ -89,7 +90,10 @@ class SideBar(QtWidgets.QWidget):
         def sort_button_pressed(button: SortButton) -> None:
             if not button.isChecked():
                 return
-            self.tag_list.sort_by_alpha = (button == sort_alpha_button)
+            if button == sort_alpha_button:
+                self.tag_list.sort_func = sort_tag_list_by_alpha
+            else:
+                self.tag_list.sort_func = sort_tag_list_by_tags
             self.tag_list.sortItems(Qt.DescendingOrder
                                     if button.reversed else Qt.AscendingOrder)
 
@@ -132,7 +136,7 @@ class SideBar(QtWidgets.QWidget):
         return f'{tag or "<Untagged>"}   ({visible}/{total})'
 
     def create_tag(self, tag: str, count: int) -> None:
-        item = TagListWidgetItem(self._tag_format(tag, count, count))
+        item = ListWidgetItem(self._tag_format(tag, count, count))
         item.setData(PATH, tag)
         item.setData(TAGS, count)
         item.setData(VISIBLE_TAGS, count)
