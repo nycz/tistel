@@ -5,10 +5,11 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tistel",
-    version="0.0.1",
+    version="0.5.0",
     author="nycz",
     description="image viewer/organizer",
-    install_requires=['exifread'],
+    install_requires=['PyQt5', 'exifread'],
+    include_package_data=True,
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
