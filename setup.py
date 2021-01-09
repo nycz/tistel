@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tistel",
-    version="0.5.0",
+    version="0.5.1",
     author="nycz",
     description="image viewer/organizer",
     install_requires=['PyQt5', 'exifread'],
