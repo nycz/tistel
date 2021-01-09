@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import QPushButton
 from .details_view import DetailsBox
 from .file_tree_view import DirectoryTree
 from .settings import Settings
-from .shared import PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidgetItem
+from .shared import (PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidgetItem,
+                     make_svg_icon)
 from .tag_list import (TagListWidget, TagState, sort_tag_list_by_alpha,
                        sort_tag_list_by_tags)
 
@@ -55,7 +56,8 @@ class SideBar(QtWidgets.QWidget):
         tag_list_box_layout = QtWidgets.QVBoxLayout(tag_list_box)
         tag_list_box_layout.setContentsMargins(0, 0, 0, 0)
         tag_list_box_layout.setSpacing(0)
-        self.tab_widget.addTab(tag_list_box, 'Tags')
+        self.tab_widget.addTab(tag_list_box, make_svg_icon('tag', 18, Qt.black), '')
+        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Tags')
 
         # Tag list buttons
         tag_buttons_hbox = QtWidgets.QHBoxLayout()
@@ -113,10 +115,13 @@ class SideBar(QtWidgets.QWidget):
 
         # Files tab
         self.dir_tree = DirectoryTree(config.active_paths, self)
-        self.tab_widget.addTab(self.dir_tree, 'Files')
+        self.tab_widget.addTab(self.dir_tree, make_svg_icon('folder', 18, Qt.black), '')
+        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Files')
 
         # Dates tab
-        self.tab_widget.addTab(QtWidgets.QLabel('todo'), 'Dates')
+        self.tab_widget.addTab(QtWidgets.QLabel('todo'),
+                               make_svg_icon('calendar', 18, Qt.black), '')
+        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Dates')
 
         # Info widget
         self.info_box = DetailsBox(self)
