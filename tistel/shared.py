@@ -24,8 +24,8 @@ FILEFORMAT = next(_data_ids)
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
 THUMBNAILS = Path.home() / '.thumbnails' / 'normal'
-LOCAL_PATH = Path(__file__).resolve().parent
-CSS_FILE = LOCAL_PATH / 'qt.css'
+DATA_PATH = Path(__file__).resolve().parent / 'data'
+CSS_FILE = DATA_PATH / 'qt.css'
 
 
 class ListWidget(QtWidgets.QListWidget):
@@ -55,7 +55,7 @@ class IconWidget(QtSvg.QSvgWidget):
                  parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         self.setFixedSize(QtCore.QSize(resolution, resolution))
-        path = LOCAL_PATH / 'icons' / f'{name}.svg'
+        path = DATA_PATH / 'icons' / f'{name}.svg'
         with open(path, 'rb') as f:
             data = f.read()
         data = data.replace(b'stroke="currentColor"', b'stroke="#eee"')
@@ -68,7 +68,7 @@ def make_svg_icon(name: str, resolution: int,
     if not isinstance(color, QtGui.QColor):
         color = QtGui.QColor(color)
     color_str = f'{color.red():0>2x}{color.green():0>2x}{color.blue():0>2x}'
-    path = LOCAL_PATH / 'icons' / f'{name}.svg'
+    path = DATA_PATH / 'icons' / f'{name}.svg'
     with open(path, 'rb') as f:
         data = f.read()
     data = data.replace(b'stroke="currentColor"',
