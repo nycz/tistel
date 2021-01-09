@@ -110,6 +110,9 @@ QTabWidget::tab-bar {
   left: 4px;
 }
 
+QTabBar {
+  font-weight: bold;
+}
 QTabBar::tab {
   padding: 5px 10px 4px;
   margin: 2px;
@@ -118,7 +121,6 @@ QTabBar::tab {
   border-top-left-radius: 4px;
   border-top-right-radius: 4px;
   background: #999;
-  font-weight: bold;
   color: black;
 }
 
@@ -192,18 +194,34 @@ QProgressBar::chunk {
 
 /* Scroll bars */
 
-QScrollBar:vertical {
+QScrollBar:vertical, QAbstractScrollArea::corner, QScrollBar:horizontal {
     background: #080808;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #666;
+    border-radius: 7px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
+
+QScrollBar:vertical {
     width: 15px;
 }
 QScrollBar::handle:vertical {
-    background: #666;
-    border-radius: 7px;
     min-height: 20px;
 }
 QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {
     height: 0px;
 }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-    background: none;
+
+QScrollBar:horizontal {
+    height: 15px;
+}
+QScrollBar::handle:horizontal {
+    min-width: 20px;
+}
+QScrollBar::sub-line:horizontal, QScrollBar::add-line:horizontal {
+    width: 0px;
 }
