@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from pathlib import Path
 import struct
 import time
@@ -12,7 +13,7 @@ from jfti import jfti
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, pyqtSignal
 
-from .shared import CACHE, Signal0, Signal1, Signal3
+from .shared import CACHE, Signal0, Signal1, Signal3, THUMBNAILS
 
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
@@ -73,6 +74,18 @@ def try_to_load_image(path: Path
     return None, None
 
 
+def try_to_get_orientation(path: Path) -> Optional[List[int]]:
+    try:
+        with open(path, 'rb') as f:
+            exif = exifread.process_file(f, stop_tag='Orientation')
+        return exif.get('Image Orientation')
+    except FileNotFoundError:
+        return None
+    except Exception:
+        logging.exception(f'Failed to get exif orientation for {path!r}')
+        return None
+
+
 def generate_thumbnail(thumb_path: Path, image_path: Path,
                        uri_path: bytes) -> bool:
     pngbytes = QtCore.QByteArray()
@@ -81,9 +94,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     if pixmap is None:
         return False
     # Rotate the thumbnail
-    with open(image_path, 'rb') as f:
-        exif = exifread.process_file(f, stop_tag='Orientation')
-    orientation = exif.get('Image Orientation')
+    orientation = try_to_get_orientation(thumb_path)
     if orientation:
         transform = set_rotation(orientation)
         if not transform.isIdentity():
@@ -113,7 +124,7 @@ class ImageLoader(QtCore.QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.cache_path = Path.home() / '.thumbnails' / 'normal'
+        self.cache_path = THUMBNAILS
         fail_thumb = QtGui.QPixmap(THUMB_SIZE)
         fail_thumb.fill(QtGui.QColor(QtCore.Qt.darkRed))
         self.base_thumb = QtGui.QImage(THUMB_SIZE,

@@ -12,10 +12,10 @@ import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 
-from .image_loading import Indexer, set_rotation
+from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import CACHE, CSS_FILE, PATH, Signal2, TAGS, TAGSTATE
+from .shared import CACHE, CSS_FILE, PATH, Signal2, TAGS, TAGSTATE, THUMBNAILS
 from .sidebar import SideBar
 from .tag_list import TagState
 from .tagging_window import TaggingWindow
@@ -28,6 +28,10 @@ class MainWindow(QtWidgets.QWidget):
     def __init__(self, config: Settings,
                  activation_event: QtCore.pyqtSignal) -> None:
         super().__init__()
+        # Make thumbnails directory if needed
+        if not THUMBNAILS.exists():
+            THUMBNAILS.mkdir(parents=True)
+
         # Settings
         self.setWindowTitle('tistel')
         cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Escape'),
@@ -69,14 +73,7 @@ class MainWindow(QtWidgets.QWidget):
                            prev: QtWidgets.QListWidgetItem) -> None:
             if current and not current.isHidden():
                 path = current.data(PATH)
-                try:
-                    with open(path, 'rb') as f:
-                        exif = exifread.process_file(f, stop_tag='Orientation')
-                    orientation = exif.get('Image Orientation')
-                except Exception:
-                    logging.exception(f'Failed to get exif orientation '
-                                      f'for {path!r}')
-                    orientation = None
+                orientation = try_to_get_orientation(path)
                 pixmap: Optional[QtGui.QPixmap] = None
                 if orientation:
                     transform = set_rotation(orientation)
