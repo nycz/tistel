@@ -102,7 +102,9 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     scaled_pixmap = pixmap.scaled(THUMB_SIZE,
                                   aspectRatioMode=QtCore.Qt.KeepAspectRatio,
                                   transformMode=QtCore.Qt.SmoothTransformation)
-    scaled_pixmap.save(buf, 'PNG')
+    # Get rid of potentially broked ICCP data by copying the pixel data
+    p2 = scaled_pixmap.copy()
+    p2.save(buf, 'PNG')
     data = pngbytes.data()
     # let's figure out where to insert our P-P-P-PAYLOAD *obnoxious air horns*
     offset = 8
