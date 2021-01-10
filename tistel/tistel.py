@@ -35,9 +35,6 @@ class MainWindow(QtWidgets.QWidget):
 
         # Settings
         self.setWindowTitle('tistel')
-        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Escape'),
-                                             self).activated
-             ).connect(self.close)
         self.config = config
         self.tag_count: typing.Counter[str] = Counter()
 
