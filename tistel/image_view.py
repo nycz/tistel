@@ -1,7 +1,7 @@
-from typing import cast, Optional
+from typing import Optional, cast
 
-from libsyntyche.widgets import mk_signal1, Signal1
-from PyQt5 import QtGui, QtCore, QtWidgets
+from libsyntyche.widgets import Signal1, mk_signal1
+from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 

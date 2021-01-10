@@ -1,12 +1,12 @@
 import enum
-from typing import cast, Optional, Set
+from typing import Optional, Set, cast
 
 from libsyntyche.widgets import mk_signal0, mk_signal1
-from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtProperty, Qt  # type: ignore
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import Qt, pyqtProperty  # type: ignore
 from PyQt5.QtGui import QColor
 
-from .shared import HOVERING, ListWidget, PATH, TAGS, TAGSTATE, VISIBLE_TAGS
+from .shared import HOVERING, PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidget
 
 
 class TagState(enum.Enum):

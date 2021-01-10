@@ -1,16 +1,16 @@
 import json
 from pathlib import Path
-from typing import cast, Counter, List, Optional, Tuple
+from typing import Counter, List, Optional, Tuple, cast
 
 from jfti import jfti
 from libsyntyche.widgets import Signal0, Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from .image_loading import ImageLoader, THUMB_SIZE
+from .image_loading import THUMB_SIZE, ImageLoader
 from .settings import Settings
-from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILESIZE,
-                     ListWidget, PATH, TAGS)
+from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS,
+                     ListWidget)
 
 
 class ProgressBar(QtWidgets.QProgressBar):

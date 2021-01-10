@@ -1,10 +1,9 @@
 import itertools
 from pathlib import Path
-from typing import Any, Callable, cast, Iterator, Optional, Union
+from typing import Any, Callable, Iterator, Optional, Union, cast
 
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
-
 
 _data_ids = itertools.count(start=Qt.UserRole)
 

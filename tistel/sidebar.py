@@ -1,4 +1,4 @@
-from typing import cast, Dict, List, Tuple
+from typing import Dict, List, Tuple, cast
 
 from libsyntyche.widgets import Signal0, Signal2, mk_signal1
 from PyQt5 import QtGui, QtWidgets

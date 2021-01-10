@@ -3,8 +3,8 @@ from typing import Optional
 from jfti import jfti
 from PyQt5 import QtWidgets
 
-from .shared import (clear_layout, DIMENSIONS, FILEFORMAT, FILESIZE,
-                     human_filesize, IconWidget, PATH, TAGS)
+from .shared import (DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS, IconWidget,
+                     clear_layout, human_filesize)
 
 
 class DetailsBox(QtWidgets.QScrollArea):

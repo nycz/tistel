@@ -1,12 +1,12 @@
 import hashlib
 import json
 import logging
-from pathlib import Path
 import struct
 import time
+import zlib
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
-import zlib
 
 import exifread
 from jfti import jfti
@@ -15,7 +15,6 @@ from PyQt5 import QtCore, QtGui
 from PyQt5.QtCore import Qt
 
 from .shared import CACHE, THUMBNAILS
-
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
 IMAGE_MAGICS = ([b'\x89PNG\x0d\x0a\x1a\x0a'],

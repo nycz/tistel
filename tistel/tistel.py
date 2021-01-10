@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-from collections import Counter
 import json
 import logging
-from pathlib import Path
 import sys
 import time
 import typing
-from typing import cast, Optional, Set
+from collections import Counter
+from pathlib import Path
+from typing import Optional, Set, cast
 
 from libsyntyche import app
 from libsyntyche.widgets import Signal0, Signal2, mk_signal0, mk_signal2
-from PyQt5 import QtGui, QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from .details_view import DetailsBox

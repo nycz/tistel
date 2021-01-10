@@ -1,6 +1,6 @@
-from pathlib import Path
 import typing
-from typing import Any, cast, Counter, Dict, List, Set, Tuple
+from pathlib import Path
+from typing import Any, Counter, Dict, List, Set, Tuple, cast
 
 from jfti import jfti
 from libsyntyche.widgets import Signal0, Signal1, mk_signal1
@@ -8,7 +8,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
-from .shared import ListWidget, ListWidgetItem, PATH, TAGS, TAG_COUNT
+from .shared import PATH, TAG_COUNT, TAGS, ListWidget, ListWidgetItem
 
 
 def sort_tag_list_by_num_and_alpha(a: QtWidgets.QListWidgetItem,

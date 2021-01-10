@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import cast, List, Optional, Set, Type, TypeVar
+from typing import List, Optional, Set, Type, TypeVar, cast
 
 from libsyntyche.widgets import Signal0, Signal1
 from PyQt5 import QtCore, QtWidgets
@@ -8,7 +8,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
 from .shared import CONFIG
-
 
 T = TypeVar('T', bound='Settings')
 
