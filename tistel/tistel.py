@@ -12,6 +12,7 @@ import exifread
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 
+from .details_view import DetailsBox
 from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
@@ -66,7 +67,9 @@ class MainWindow(QtWidgets.QWidget):
             self.sidebar.tag_list.set_current_thumb)
 
         # Right column - big image
-        self.image_view = ImagePreview(self.splitter)
+        self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self.splitter)
+
+        self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')
 
         def load_big_image(current: QtWidgets.QListWidgetItem,
@@ -83,10 +86,10 @@ class MainWindow(QtWidgets.QWidget):
                 if pixmap is None:
                     pixmap = QtGui.QPixmap(str(path))
                 self.image_view.setPixmap(pixmap)
-                self.sidebar.info_box.set_info(current)
+                self.image_info_box.set_info(current)
             else:
                 self.image_view.setPixmap(None)
-                self.sidebar.info_box.set_info(None)
+                self.image_info_box.set_info(None)
 
         cast(pyqtSignal, self.thumb_view.currentItemChanged
              ).connect(load_big_image)
@@ -106,7 +109,15 @@ class MainWindow(QtWidgets.QWidget):
                     return
 
         self.image_view.change_image.connect(change_image)
-        self.splitter.addWidget(self.image_view)
+        self.image_view_splitter.addWidget(self.image_view)
+        self.image_view_splitter.setStretchFactor(0, 1)
+
+        # Image info box
+        self.image_info_box = DetailsBox(self)
+        self.image_view_splitter.addWidget(self.image_info_box)
+        self.image_view_splitter.setStretchFactor(1, 0)
+
+        self.splitter.addWidget(self.image_view_splitter)
         self.splitter.setStretchFactor(2, 1)
 
         # Toggle fullscreen
@@ -117,7 +128,7 @@ class MainWindow(QtWidgets.QWidget):
             else:
                 self.config.main_splitter = self.splitter.sizes()
                 self.config.side_splitter = \
-                    self.sidebar.splitter.sizes()
+                    self.image_view_splitter.sizes()
                 self.config.save()
                 self.thumb_view.hide()
                 self.sidebar.hide()
@@ -187,7 +198,7 @@ class MainWindow(QtWidgets.QWidget):
         if config.main_splitter:
             self.splitter.setSizes(config.main_splitter)
         if config.side_splitter:
-            self.sidebar.splitter.setSizes(config.side_splitter)
+            self.image_view_splitter.setSizes(config.side_splitter)
         self.make_event_filter()
         self.show()
         self.index_images()
@@ -267,7 +278,7 @@ class MainWindow(QtWidgets.QWidget):
                     if self.thumb_view.isVisible():
                         self.config.main_splitter = self.splitter.sizes()
                         self.config.side_splitter = \
-                            self.sidebar.splitter.sizes()
+                            self.image_view_splitter.sizes()
                         self.config.save()
                 return False
         self.close_filter = MainWindowEventFilter()

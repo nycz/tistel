@@ -5,14 +5,12 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import QPushButton
 
-from .details_view import DetailsBox
 from .file_tree_view import DirectoryTree
 from .settings import Settings
 from .shared import (PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidgetItem,
                      make_svg_icon)
 from .tag_list import (TagListWidget, TagState, sort_tag_list_by_alpha,
                        sort_tag_list_by_tags)
-
 
 
 class SortButton(QtWidgets.QPushButton):
@@ -40,24 +38,35 @@ class SideBar(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Splitter between tabs and info
-        self.splitter = QtWidgets.QSplitter(Qt.Vertical, self)
-        layout.addWidget(self.splitter)
+        # Tab bar
+        tab_bar_grid = QtWidgets.QGridLayout()
+        layout.addLayout(tab_bar_grid)
+        self.tab_bar_buttons = QtWidgets.QButtonGroup()
+        self.tab_bar_buttons.setExclusive(True)
 
-        # Tab widget
-        self.tab_widget = QtWidgets.QTabWidget(self)
-        self.tab_widget.setFocusPolicy(Qt.NoFocus)
-        self.splitter.addWidget(self.tab_widget)
-        self.splitter.setStretchFactor(0, 1)
+        # Tab content stack
+        stack = QtWidgets.QStackedLayout()
+        layout.addLayout(stack)
+
+        def select_tab(tab_id: int, checked: bool) -> None:
+            if checked:
+                stack.setCurrentIndex(tab_id)
+        self.tab_bar_buttons.idToggled.connect(select_tab)
 
         # Tag list box
-        tag_list_box = QtWidgets.QWidget(self.tab_widget)
+        tag_list_box = QtWidgets.QWidget()#self.tab_widget)
         tag_list_box.setObjectName('tag_list_box')
         tag_list_box_layout = QtWidgets.QVBoxLayout(tag_list_box)
         tag_list_box_layout.setContentsMargins(0, 0, 0, 0)
         tag_list_box_layout.setSpacing(0)
-        self.tab_widget.addTab(tag_list_box, make_svg_icon('tag', 18, Qt.black), '')
-        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Tags')
+        tag_list_button = QtWidgets.QPushButton()
+        tag_list_button.setIcon(make_svg_icon('tag', 18, Qt.black))
+        tag_list_button.setCheckable(True)
+        tag_list_button.setChecked(True)
+        tag_list_button.setToolTip('Tags')
+        tab_bar_grid.addWidget(tag_list_button, 0, 0)
+        self.tab_bar_buttons.addButton(tag_list_button, 0)
+        stack.addWidget(tag_list_box)
 
         # Tag list buttons
         tag_buttons_hbox = QtWidgets.QHBoxLayout()
@@ -115,18 +124,13 @@ class SideBar(QtWidgets.QWidget):
 
         # Files tab
         self.dir_tree = DirectoryTree(config.active_paths, self)
-        self.tab_widget.addTab(self.dir_tree, make_svg_icon('folder', 18, Qt.black), '')
-        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Files')
-
-        # Dates tab
-        self.tab_widget.addTab(QtWidgets.QLabel('todo'),
-                               make_svg_icon('calendar', 18, Qt.black), '')
-        self.tab_widget.setTabToolTip(self.tab_widget.count() - 1, 'Dates')
-
-        # Info widget
-        self.info_box = DetailsBox(self)
-        self.splitter.addWidget(self.info_box)
-        self.splitter.setStretchFactor(1, 0)
+        files_button = QtWidgets.QPushButton()
+        files_button.setIcon(make_svg_icon('folder', 18, Qt.black))
+        files_button.setCheckable(True)
+        files_button.setToolTip('Files')
+        tab_bar_grid.addWidget(files_button, 0, 1)
+        self.tab_bar_buttons.addButton(files_button, 1)
+        stack.addWidget(self.dir_tree)
 
         # Buttons at the bottom
         bottom_row = QtWidgets.QHBoxLayout()
