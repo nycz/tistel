@@ -6,48 +6,46 @@ from pathlib import Path
 import sys
 import time
 import typing
-from typing import cast, List, Optional, Set
+from typing import cast, Optional, Set
 
-import exifread
+from libsyntyche import app
+from libsyntyche.widgets import Signal0, Signal2, mk_signal0, mk_signal2
 from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 
 from .details_view import DetailsBox
 from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import CACHE, CSS_FILE, PATH, Signal2, TAGS, TAGSTATE, THUMBNAILS
+from .shared import CACHE, CSS_FILE, PATH, TAGS, TAGSTATE, THUMBNAILS
 from .sidebar import SideBar
 from .tag_list import TagState
 from .tagging_window import TaggingWindow
 from .thumb_view import ProgressBar, ThumbView
 
 
-class MainWindow(QtWidgets.QWidget):
-    start_indexing: Signal2[Set[Path], bool] = pyqtSignal(set, bool)
+class MainWindow(app.RootWindow):
+    start_indexing: Signal2[Set[Path], bool] = mk_signal2(set, bool)
 
-    def __init__(self, config: Settings,
-                 activation_event: QtCore.pyqtSignal) -> None:
-        super().__init__()
+    def __init__(self, config: Settings, activation_event: Signal0) -> None:
+        super().__init__('tistel')
         # Make thumbnails directory if needed
         if not THUMBNAILS.exists():
             THUMBNAILS.mkdir(parents=True)
 
         # Settings
-        self.setWindowTitle('tistel')
         self.config = config
         self.tag_count: typing.Counter[str] = Counter()
 
         # Main layout
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        self.layout().setContentsMargins(0, 0, 0, 0)
         self.splitter = QtWidgets.QSplitter(self)
-        layout.addWidget(self.splitter)
+        self.layout().addWidget(self.splitter)
 
         # Statusbar
         progress = ProgressBar(self)
         progress.hide()
-        layout.addWidget(progress)
+        self.layout().addWidget(progress)
 
         # Left column - tags/files/dates and info
         self.sidebar = SideBar(config, self)
@@ -88,7 +86,8 @@ class MainWindow(QtWidgets.QWidget):
                 self.image_view.setPixmap(None)
                 self.image_info_box.set_info(None)
 
-        cast(pyqtSignal, self.thumb_view.currentItemChanged
+        cast(Signal2[QtWidgets.QListWidgetItem, QtWidgets.QListWidgetItem],
+             self.thumb_view.currentItemChanged
              ).connect(load_big_image)
 
         def change_image(diff: int) -> None:
@@ -130,8 +129,7 @@ class MainWindow(QtWidgets.QWidget):
                 self.thumb_view.hide()
                 self.sidebar.hide()
 
-        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('f'),
-                                             self).activated
+        cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('f'), self).activated
              ).connect(toggle_fullscreen)
 
         # Settings dialog
@@ -160,20 +158,19 @@ class MainWindow(QtWidgets.QWidget):
                                          if self.config.show_names else None)
                         self.thumb_view.update_thumb_size()
 
-        cast(pyqtSignal, self.sidebar.settings_button.clicked
+        cast(Signal0, self.sidebar.settings_button.clicked
              ).connect(show_settings_window)
 
         # Tagging dialog
         self.tagging_dialog = TaggingWindow(self)
 
-        cast(pyqtSignal, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'),
-                                             self).activated
+        cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'), self).activated
              ).connect(self.show_tagging_dialog)
 
         # Reloading
         self.indexer = Indexer()
         self.indexer_thread = QtCore.QThread()
-        cast(QtCore.pyqtSignal, QtWidgets.QApplication.instance().aboutToQuit
+        cast(Signal0, QtWidgets.QApplication.instance().aboutToQuit  # type: ignore
              ).connect(self.indexer_thread.quit)
         self.indexer.moveToThread(self.indexer_thread)
         self.indexer.done.connect(self.load_index)
@@ -188,8 +185,7 @@ class MainWindow(QtWidgets.QWidget):
         self.indexer.set_value.connect(self.indexer_progressbar.setValue)
         self.indexer.set_max.connect(self.indexer_progressbar.setMaximum)
 
-        cast(pyqtSignal, self.sidebar.reload_button.clicked
-             ).connect(self.index_images)
+        cast(Signal0, self.sidebar.reload_button.clicked).connect(self.index_images)
 
         # Finalize
         if config.main_splitter:
@@ -347,7 +343,7 @@ def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
 
     class AppEventFilter(QtCore.QObject):
-        activation_event = QtCore.pyqtSignal()
+        activation_event = mk_signal0()
 
         def eventFilter(self, object: QtCore.QObject,
                         event: QtCore.QEvent) -> bool:

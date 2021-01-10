@@ -10,10 +10,11 @@ import zlib
 
 import exifread
 from jfti import jfti
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt, pyqtSignal
+from libsyntyche.widgets import mk_signal1, mk_signal3
+from PyQt5 import QtCore, QtGui
+from PyQt5.QtCore import Qt
 
-from .shared import CACHE, Signal0, Signal1, Signal3, THUMBNAILS
+from .shared import CACHE, THUMBNAILS
 
 
 IMAGE_EXTS = ('.png', '.jpg', '.gif')
@@ -121,8 +122,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
 
 
 class ImageLoader(QtCore.QObject):
-    thumbnail_ready: Signal3[int, int, QtGui.QIcon] \
-        = QtCore.pyqtSignal(int, int, QtGui.QIcon)
+    thumbnail_ready = mk_signal3(int, int, QtGui.QIcon)
 
     def __init__(self) -> None:
         super().__init__()
@@ -176,10 +176,10 @@ class ImageLoader(QtCore.QObject):
 
 
 class Indexer(QtCore.QObject):
-    set_text: Signal1[str] = pyqtSignal(str)
-    set_value: Signal1[int] = pyqtSignal(int)
-    set_max: Signal1[int] = pyqtSignal(int)
-    done: Signal1[bool] = pyqtSignal(bool)
+    set_text = mk_signal1(str)
+    set_value = mk_signal1(int)
+    set_max = mk_signal1(int)
+    done = mk_signal1(bool)
 
     def index_images(self, paths: Iterable[Path],
                      skip_thumb_cache: bool) -> None:

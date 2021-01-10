@@ -1,8 +1,8 @@
-from pathlib import Path
-from typing import cast, Dict, List, Set, Tuple
+from typing import cast, Dict, List, Tuple
 
-from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from libsyntyche.widgets import Signal0, Signal2, mk_signal1
+from PyQt5 import QtGui, QtWidgets
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QPushButton
 
 from .file_tree_view import DirectoryTree
@@ -24,14 +24,14 @@ class SortButton(QtWidgets.QPushButton):
             self.setText(self.text()[::-1])
         elif event.button() == Qt.LeftButton:
             self.setChecked(True)
-        cast(pyqtSignal, self.pressed).emit()
+        cast(Signal0, self.pressed).emit()
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         return
 
 
 class SideBar(QtWidgets.QWidget):
-    tag_selected = QtCore.pyqtSignal(str)
+    tag_selected = mk_signal1(str)
 
     def __init__(self, config: Settings, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
@@ -51,10 +51,10 @@ class SideBar(QtWidgets.QWidget):
         def select_tab(tab_id: int, checked: bool) -> None:
             if checked:
                 stack.setCurrentIndex(tab_id)
-        self.tab_bar_buttons.idToggled.connect(select_tab)
+        cast(Signal2[int, bool], self.tab_bar_buttons.idToggled).connect(select_tab)
 
         # Tag list box
-        tag_list_box = QtWidgets.QWidget()#self.tab_widget)
+        tag_list_box = QtWidgets.QWidget()
         tag_list_box.setObjectName('tag_list_box')
         tag_list_box_layout = QtWidgets.QVBoxLayout(tag_list_box)
         tag_list_box_layout.setContentsMargins(0, 0, 0, 0)
@@ -108,10 +108,14 @@ class SideBar(QtWidgets.QWidget):
             self.tag_list.sortItems(Qt.DescendingOrder
                                     if button.reversed else Qt.AscendingOrder)
 
-        cast(pyqtSignal, sort_alpha_button.pressed).connect(
-            lambda: sort_button_pressed(sort_alpha_button))
-        cast(pyqtSignal, sort_count_button.pressed).connect(
-            lambda: sort_button_pressed(sort_count_button))
+        def alpha_sort_button_pressed() -> None:
+            sort_button_pressed(sort_alpha_button)
+
+        def count_sort_button_pressed() -> None:
+            sort_button_pressed(sort_count_button)
+
+        cast(Signal0, sort_alpha_button.pressed).connect(alpha_sort_button_pressed)
+        cast(Signal0, sort_count_button.pressed).connect(count_sort_button_pressed)
         self.sort_alpha_button = sort_alpha_button
         self.sort_count_button = sort_count_button
 
@@ -120,7 +124,7 @@ class SideBar(QtWidgets.QWidget):
                 tag.setData(TAGSTATE, TagState.DEFAULT)
             self.tag_list.tag_state_updated.emit()
 
-        cast(pyqtSignal, clear_button.clicked).connect(clear_tag_filters)
+        cast(Signal0, clear_button.clicked).connect(clear_tag_filters)
 
         # Files tab
         self.dir_tree = DirectoryTree(config.active_paths, self)

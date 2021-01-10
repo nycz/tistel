@@ -1,8 +1,6 @@
 import itertools
 from pathlib import Path
-from typing import (Any, Callable, cast, Iterator, Optional,
-                    Type, TypeVar, Union)
-from typing_extensions import Protocol
+from typing import Any, Callable, cast, Iterator, Optional, Union
 
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
@@ -46,7 +44,7 @@ class ListWidgetItem(QtWidgets.QListWidgetItem):
         if sort_func is not None:
             result = sort_func(self, cast(ListWidgetItem, other))
         else:
-            result = super().__lt__(other)
+            result = super().__lt__(other)  # type: ignore
         return result
 
 
@@ -98,41 +96,3 @@ def human_filesize(bytenum_int: int) -> str:
             break
         bytenum /= 1000
     return f'{bytenum:.1f}{t}'
-
-
-_T1 = TypeVar('_T1')
-_T2 = TypeVar('_T2')
-_T3 = TypeVar('_T3')
-
-
-class Signal0(Protocol):
-    def __init__(self) -> None: ...
-
-    def emit(self) -> None: ...
-
-    def connect(self, slot: Callable[[], None]) -> None: ...
-
-
-class Signal1(Protocol[_T1]):
-    def __init__(self, arg_type: Type[_T1]) -> None: ...
-
-    def emit(self, arg: _T1) -> None: ...
-
-    def connect(self, slot: Callable[[_T1], None]) -> None: ...
-
-
-class Signal2(Protocol[_T1, _T2]):
-    def __init__(self, arg1_type: Type[_T1], arg2_type: Type[_T2]) -> None: ...
-
-    def emit(self, arg1: _T1, arg2: _T2) -> None: ...
-
-    def connect(self, slot: Callable[[_T1, _T2], None]) -> None: ...
-
-
-class Signal3(Protocol[_T1, _T2, _T3]):
-    def __init__(self, arg1_type: Type[_T1], arg2_type: Type[_T2],
-                 arg3_type: Type[_T3]) -> None: ...
-
-    def emit(self, arg1: _T1, arg2: _T2, arg3: _T3) -> None: ...
-
-    def connect(self, slot: Callable[[_T1, _T2, _T3], None]) -> None: ...

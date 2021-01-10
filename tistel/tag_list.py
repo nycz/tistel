@@ -1,8 +1,9 @@
 import enum
 from typing import cast, Optional, Set
 
+from libsyntyche.widgets import mk_signal0, mk_signal1
 from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtProperty, Qt
+from PyQt5.QtCore import pyqtProperty, Qt  # type: ignore
 from PyQt5.QtGui import QColor
 
 from .shared import HOVERING, ListWidget, PATH, TAGS, TAGSTATE, VISIBLE_TAGS
@@ -65,9 +66,9 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class TagListWidget(ListWidget):
-    tag_state_updated = QtCore.pyqtSignal()
-    tag_blacklisted = QtCore.pyqtSignal(str)
-    tag_whitelisted = QtCore.pyqtSignal(str)
+    tag_state_updated = mk_signal0()
+    tag_blacklisted = mk_signal1(str)
+    tag_whitelisted = mk_signal1(str)
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
@@ -131,11 +132,11 @@ class TagListWidget(ListWidget):
         if self.last_item is not None:
             self.last_item.setData(HOVERING, False)
 
-    def enterEvent(self, event: QtGui.QEnterEvent) -> None:
+    def enterEvent(self, event: QtCore.QEvent) -> None:
         super().enterEvent(event)
         if self.last_item is not None:
             self.last_item.setData(HOVERING, False)
-        item = self.itemAt(event.pos())
+        item = self.itemAt(cast(QtGui.QEnterEvent, event).pos())
         if item is not None:
             self.setCursor(Qt.PointingHandCursor)
             item.setData(HOVERING, True)
@@ -162,14 +163,14 @@ class TagListWidget(ListWidget):
 
 
 def sort_tag_list_by_alpha(a: QtWidgets.QListWidgetItem,
-                                b: QtWidgets.QListWidgetItem) -> bool:
+                           b: QtWidgets.QListWidgetItem) -> bool:
     a_data = (a.data(PATH).lower(), a.data(TAGS))
     b_data = (b.data(PATH).lower(), b.data(TAGS))
     return a_data < b_data
 
 
 def sort_tag_list_by_tags(a: QtWidgets.QListWidgetItem,
-                               b: QtWidgets.QListWidgetItem) -> bool:
+                          b: QtWidgets.QListWidgetItem) -> bool:
     a_data = (a.data(TAGS), a.data(PATH).lower())
     b_data = (b.data(TAGS), b.data(PATH).lower())
     return a_data < b_data

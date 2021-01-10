@@ -3,13 +3,14 @@ from pathlib import Path
 from typing import cast, Counter, List, Optional, Tuple
 
 from jfti import jfti
+from libsyntyche.widgets import Signal0, Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 
 from .image_loading import ImageLoader, THUMB_SIZE
 from .settings import Settings
 from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILESIZE,
-                     ListWidget, PATH, Signal2, TAGS)
+                     ListWidget, PATH, TAGS)
 
 
 class ProgressBar(QtWidgets.QProgressBar):
@@ -21,8 +22,7 @@ class ProgressBar(QtWidgets.QProgressBar):
 
 
 class ThumbView(ListWidget):
-    image_queued: Signal2[int,
-                          List[Tuple[int, bool, Path]]] = pyqtSignal(int, list)
+    image_queued: Signal2[int, List[Tuple[int, bool, Path]]] = mk_signal2(int, list)
 
     def __init__(self, progress: ProgressBar, config: Settings,
                  parent: QtWidgets.QWidget) -> None:
@@ -46,7 +46,7 @@ class ThumbView(ListWidget):
         self.default_icon.addPixmap(default_thumb, QtGui.QIcon.Selected)
 
         self.thumb_loader_thread = QtCore.QThread()
-        cast(pyqtSignal, QtWidgets.QApplication.instance().aboutToQuit
+        cast(Signal0, QtWidgets.QApplication.instance().aboutToQuit  # type: ignore
              ).connect(self.thumb_loader_thread.quit)
         self.thumb_loader = ImageLoader()
         self.thumb_loader.moveToThread(self.thumb_loader_thread)
@@ -57,14 +57,12 @@ class ThumbView(ListWidget):
 
     def update_thumb_size(self) -> None:
         if self.config.show_names:
-            text_height = int(QtGui.QFontMetricsF(self.font()
-                                                  ).height() * 1.5)
+            text_height = int(QtGui.QFontMetricsF(self.font()).height() * 1.5)
         else:
             text_height = 0
         self.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))
         margin = (10 + 3) * 2
-        self.setGridSize(THUMB_SIZE
-                         + QtCore.QSize(margin, margin + text_height))
+        self.setGridSize(THUMB_SIZE + QtCore.QSize(margin, margin + text_height))
 
     def find_visible(self, reverse: bool = False
                      ) -> Optional[QtWidgets.QListWidgetItem]:

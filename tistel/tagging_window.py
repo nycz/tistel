@@ -1,10 +1,11 @@
 from pathlib import Path
 import typing
-from typing import Any, cast, Counter, Dict, Iterable, List, Set, Tuple
+from typing import Any, cast, Counter, Dict, List, Set, Tuple
 
 from jfti import jfti
+from libsyntyche.widgets import Signal0, Signal1, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
 from .shared import ListWidget, ListWidgetItem, PATH, TAGS, TAG_COUNT
@@ -21,13 +22,12 @@ def sort_tag_list_by_num_and_alpha(a: QtWidgets.QListWidgetItem,
 
 
 class TagInput(QtWidgets.QLineEdit):
-    tab_pressed = pyqtSignal(bool)
+    tab_pressed = mk_signal1(bool)
 
     def event(self, raw_ev: QtCore.QEvent) -> bool:
         if raw_ev.type() == QtCore.QEvent.KeyPress:
             ev = cast(QtGui.QKeyEvent, raw_ev)
-            if ev.key() == Qt.Key_Backtab \
-                    and ev.modifiers() == Qt.ShiftModifier:
+            if ev.key() == Qt.Key_Backtab and ev.modifiers() == Qt.ShiftModifier:
                 comp = self.completer()
                 if not comp.popup().isVisible():
                     return False
@@ -61,7 +61,7 @@ class TagInput(QtWidgets.QLineEdit):
                 return True
             elif ev.key() == Qt.Key_Return:
                 self.completer().popup().hide()
-                cast(pyqtSignal, self.returnPressed).emit()
+                cast(Signal0, self.returnPressed).emit()
                 return True
         return super().event(raw_ev)
 
@@ -93,25 +93,27 @@ class TaggingWindow(QtWidgets.QDialog):
         def update_add_button(text: str) -> None:
             self.add_tag_button.setEnabled(bool(text.strip()))
 
-        cast(pyqtSignal, self.tag_input.textChanged).connect(update_add_button)
-        cast(pyqtSignal, self.tag_input.returnPressed).connect(self.add_tag)
-        cast(pyqtSignal, self.add_tag_button.clicked).connect(self.add_tag)
+        cast(Signal1[str], self.tag_input.textChanged).connect(update_add_button)
+        cast(Signal0, self.tag_input.returnPressed).connect(self.add_tag)
+        cast(Signal0, self.add_tag_button.clicked).connect(self.add_tag)
 
         # Tag list
         layout.addWidget(QtWidgets.QLabel('All tags'))
         self.tag_list = ListWidget(self)
         self.tag_list.sort_func = sort_tag_list_by_num_and_alpha
         layout.addWidget(self.tag_list)
-        cast(pyqtSignal, self.tag_list.itemChanged
-             ).connect(lambda _: self.tag_list.sortItems())
+
+        def just_sort(x: QtWidgets.QListWidgetItem) -> None:
+            self.tag_list.sortItems()
+        cast(Signal1[QtWidgets.QListWidgetItem], self.tag_list.itemChanged).connect(just_sort)
 
         # Buttons
         button_box = QDialogButtonBox(self)
         button_box.addButton(QDialogButtonBox.Cancel)
         self.accept_button = button_box.addButton('Apply to images',
                                                   QDialogButtonBox.AcceptRole)
-        cast(pyqtSignal, button_box.accepted).connect(self.accept)
-        cast(pyqtSignal, button_box.rejected).connect(self.reject)
+        cast(Signal0, button_box.accepted).connect(self.accept)
+        cast(Signal0, button_box.rejected).connect(self.reject)
         layout.addWidget(button_box)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:

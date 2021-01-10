@@ -2,11 +2,12 @@ import json
 from pathlib import Path
 from typing import cast, List, Optional, Set, Type, TypeVar
 
+from libsyntyche.widgets import Signal0, Signal1
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
-from .shared import CACHE, CONFIG
+from .shared import CONFIG
 
 
 T = TypeVar('T', bound='Settings')
@@ -103,12 +104,11 @@ class SettingsWindow(QtWidgets.QDialog):
         # Directory buttons
         hbox = QtWidgets.QHBoxLayout()
         self.add_button = QtWidgets.QPushButton('Add directory...', self)
-        cast(pyqtSignal, self.add_button.clicked).connect(self.add_directory)
+        cast(Signal0, self.add_button.clicked).connect(self.add_directory)
         hbox.addWidget(self.add_button)
         self.remove_button = QtWidgets.QPushButton('Remove directory', self)
         self.remove_button.setEnabled(False)
-        cast(pyqtSignal, self.remove_button.clicked
-             ).connect(self.remove_directories)
+        cast(Signal0, self.remove_button.clicked).connect(self.remove_directories)
         hbox.addWidget(self.remove_button)
         dirbox_layout.addLayout(hbox)
 
@@ -134,13 +134,11 @@ class SettingsWindow(QtWidgets.QDialog):
             if new_state == Qt.Checked:
                 msg = ('Are you sure you want to remove the cache? This will '
                        'not reset any thumbnails, only the file information.')
-                reply = QtWidgets.QMessageBox.question(self, 'Clear cache',
-                                                       msg)
+                reply = QtWidgets.QMessageBox.question(self, 'Clear cache', msg)
                 if reply != QtWidgets.QMessageBox.Yes:
                     self.clear_cache_checkbox.setCheckState(Qt.Unchecked)
 
-        cast(pyqtSignal, self.clear_cache_checkbox.stateChanged
-             ).connect(clear_cache)
+        cast(Signal1[int], self.clear_cache_checkbox.stateChanged).connect(clear_cache)
         cachebox_layout.addWidget(self.clear_cache_checkbox)
 
         # Regenerate thumbnails
@@ -156,7 +154,7 @@ class SettingsWindow(QtWidgets.QDialog):
                 if reply != QtWidgets.QMessageBox.Yes:
                     self.regen_thumbnails_checkbox.setCheckState(Qt.Unchecked)
 
-        cast(pyqtSignal, self.regen_thumbnails_checkbox.stateChanged
+        cast(Signal1[int], self.regen_thumbnails_checkbox.stateChanged
              ).connect(regenerate_thumbnails)
         cachebox_layout.addWidget(self.regen_thumbnails_checkbox)
 
@@ -173,22 +171,21 @@ class SettingsWindow(QtWidgets.QDialog):
                 self.config.show_names = False
         self.show_names_checkbox = QtWidgets.QCheckBox(
             'Show names in thumbnail view', self)
-        cast(pyqtSignal, self.show_names_checkbox.stateChanged
+        cast(Signal1[int], self.show_names_checkbox.stateChanged
              ).connect(update_show_names)
         miscbox_layout.addWidget(self.show_names_checkbox)
 
         # Action buttons
         layout.addSpacing(10)
-        btm_buttons = QDialogButtonBox(QDialogButtonBox.Cancel
-                                       | QDialogButtonBox.Save)
+        btm_buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Save)
         layout.addWidget(btm_buttons)
-        cast(pyqtSignal, btm_buttons.accepted).connect(self.accept)
-        cast(pyqtSignal, btm_buttons.rejected).connect(self.reject)
+        cast(Signal0, btm_buttons.accepted).connect(self.accept)
+        cast(Signal0, btm_buttons.rejected).connect(self.reject)
 
         def on_selection_change() -> None:
             self.remove_button.setEnabled(
                 bool(self.path_list.selectedItems()))
-        cast(pyqtSignal, self.path_list.itemSelectionChanged
+        cast(Signal0, self.path_list.itemSelectionChanged
              ).connect(on_selection_change)
 
     @property

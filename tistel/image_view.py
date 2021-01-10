@@ -1,11 +1,12 @@
 from typing import cast, Optional
 
+from libsyntyche.widgets import mk_signal1, Signal1
 from PyQt5 import QtGui, QtCore, QtWidgets
-from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 
 
 class ImagePreview(QtWidgets.QLabel):
-    change_image = QtCore.pyqtSignal(int)
+    change_image = mk_signal1(int)
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
@@ -85,7 +86,7 @@ class ImagePreview(QtWidgets.QLabel):
         self.image = None
         self.fail = False
         self.animation = animation
-        cast(pyqtSignal, self.animation.frameChanged).connect(self.new_frame)
+        cast(Signal1[QtGui.QPixmap], self.animation.frameChanged).connect(self.new_frame)
         self.animation.start()
         self.animation_size = self.animation.currentImage().size()
         self.update_animation_size()
