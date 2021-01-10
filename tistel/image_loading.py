@@ -5,10 +5,10 @@ import struct
 import time
 import zlib
 from pathlib import Path
+import subprocess
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
-import exifread
 from jfti import jfti
 from libsyntyche.widgets import mk_signal1, mk_signal3
 from PyQt5 import QtCore, QtGui
@@ -24,15 +24,15 @@ IMAGE_MAGICS = ([b'\x89PNG\x0d\x0a\x1a\x0a'],
 THUMB_SIZE = QtCore.QSize(192, 128)
 
 
-def set_rotation(orientation: List[int]) -> QtGui.QTransform:
+def set_rotation(orientation: int) -> QtGui.QTransform:
     transform = QtGui.QTransform()
-    if orientation.values == [8]:
+    if orientation == 8:
         # Rotate left
         transform.rotate(-90)
-    elif orientation.values == [6]:
+    elif orientation == 6:
         # Rotate right
         transform.rotate(90)
-    elif orientation.values == [3]:
+    elif orientation == 3:
         # Rotate 180
         transform.rotate(180)
     return transform
@@ -74,16 +74,25 @@ def try_to_load_image(path: Path
     return None, None
 
 
-def try_to_get_orientation(path: Path) -> Optional[List[int]]:
+def try_to_get_orientation(path: Path) -> Optional[int]:
+    if not path.exists():
+        return None
     try:
-        with open(path, 'rb') as f:
-            exif = exifread.process_file(f, stop_tag='Orientation')
-        return exif.get('Image Orientation')
-    except FileNotFoundError:
+        text = subprocess.check_output(['exiv2', '-P', 'v',
+                                        '-K', 'Exif.Image.Orientation', str(path)],
+                                       encoding='utf-8', stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        if e.stderr:
+            logging.error(f'Failed to get exif orientation for {path!r}\n'
+                          + e.stderr)
         return None
-    except Exception:
-        logging.exception(f'Failed to get exif orientation for {path!r}')
-        return None
+    lines = text.strip().splitlines()
+    if lines:
+        try:
+            return int(lines[0].strip())
+        except Exception:
+            logging.exception(f'Failed to get exif orientation for {path!r}')
+    return None
 
 
 def generate_thumbnail(thumb_path: Path, image_path: Path,

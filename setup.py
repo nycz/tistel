@@ -8,7 +8,7 @@ setuptools.setup(
     version="0.5.2",
     author="nycz",
     description="image viewer/organizer",
-    install_requires=['PyQt5', 'exifread', 'libsyntyche', 'jfti'],
+    install_requires=['PyQt5', 'libsyntyche', 'jfti'],
     include_package_data=True,
     long_description=long_description,
     long_description_content_type="text/markdown",
