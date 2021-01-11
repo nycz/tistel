@@ -212,7 +212,7 @@ class SettingsWindow(QtWidgets.QDialog):
             self.path_override_label.show()
         else:
             self.add_button.setEnabled(True)
-            self.remove_button.setEnabled(True)
+            self.remove_button.setEnabled(bool(self.path_list.selectedItems()))
             self.path_list.setEnabled(True)
             self.path_override_label.hide()
 
