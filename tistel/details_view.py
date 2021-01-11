@@ -1,8 +1,8 @@
 from typing import Optional
 
-from jfti import jfti
 from PyQt5 import QtWidgets
 
+from . import jfti
 from .shared import (DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS, IconWidget,
                      clear_layout, human_filesize)
 

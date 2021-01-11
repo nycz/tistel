@@ -2,24 +2,19 @@ import hashlib
 import json
 import logging
 import struct
+import subprocess
 import time
 import zlib
 from pathlib import Path
-import subprocess
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
-from jfti import jfti
 from libsyntyche.widgets import mk_signal1, mk_signal3
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtCore import Qt
 
+from . import jfti
 from .shared import CACHE, THUMBNAILS
-
-IMAGE_EXTS = ('.png', '.jpg', '.gif')
-IMAGE_MAGICS = ([b'\x89PNG\x0d\x0a\x1a\x0a'],
-                [b'\xff\xd8'],
-                [b'GIF87a', b'GIF89a'])
 
 THUMB_SIZE = QtCore.QSize(192, 128)
 
@@ -64,7 +59,7 @@ def try_to_load_image(path: Path
         with path.open('rb') as f:
             magic_data = f.read(8)
 
-        for img_format, magics in zip(IMAGE_EXTS, IMAGE_MAGICS):
+        for img_format, magics in zip(jfti.IMAGE_EXTS, jfti.IMAGE_MAGICS):
             for magic in magics:
                 if magic == magic_data[:len(magic)]:
                     pixmap = QtGui.QPixmap(str(path),
