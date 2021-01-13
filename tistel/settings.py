@@ -15,14 +15,16 @@ T = TypeVar('T', bound='Settings')
 class Settings:
     _PATHS_KEY = 'directories'
     _SHOW_NAMES_KEY = 'show_names'
-    _MAIN_SPLITTER_KEY = 'main_splitter'
+    _SIDEBAR_WIDTH_KEY = 'sidebar_width'
+    _THUMB_VIEW_COLUMNS_KEY = 'thumb_view_columns'
     _SIDE_SPLITTER_KEY = 'side_splitter'
 
     def __init__(self) -> None:
         self.path_overrides: Set[Path] = set()
         self.paths: Set[Path] = set()
         self.show_names = True
-        self.main_splitter: Optional[List[int]] = None
+        self.sidebar_width: Optional[int] = None
+        self.thumb_view_columns = 2
         self.side_splitter: Optional[List[int]] = None
 
     @property
@@ -34,7 +36,8 @@ class Settings:
         clone.path_overrides = self.path_overrides.copy()
         clone.paths = self.paths.copy()
         clone.show_names = self.show_names
-        clone.main_splitter = self.main_splitter
+        clone.sidebar_width = self.sidebar_width
+        clone.thumb_view_columns = self.thumb_view_columns
         clone.side_splitter = self.side_splitter
         return clone
 
@@ -42,7 +45,8 @@ class Settings:
         data = {
             self._PATHS_KEY: sorted(str(p) for p in self.paths),
             self._SHOW_NAMES_KEY: self.show_names,
-            self._MAIN_SPLITTER_KEY: self.main_splitter,
+            self._SIDEBAR_WIDTH_KEY: self.sidebar_width,
+            self._THUMB_VIEW_COLUMNS_KEY: self.thumb_view_columns,
             self._SIDE_SPLITTER_KEY: self.side_splitter,
         }
         json_data = json.dumps(data, indent=2)
@@ -50,7 +54,8 @@ class Settings:
 
     def update(self: T, other: T) -> None:
         self.show_names = other.show_names
-        self.main_splitter = other.main_splitter
+        self.sidebar_width = other.sidebar_width
+        self.thumb_view_columns = other.thumb_view_columns
         self.side_splitter = other.side_splitter
         # Do this just in case some bozo has refs of these
         self.path_overrides.clear()
@@ -74,8 +79,10 @@ class Settings:
                                 for p in config_data[cls._PATHS_KEY]}
             if cls._SHOW_NAMES_KEY in config_data:
                 config.show_names = config_data[cls._SHOW_NAMES_KEY]
-            if cls._MAIN_SPLITTER_KEY in config_data:
-                config.main_splitter = config_data[cls._MAIN_SPLITTER_KEY]
+            if cls._SIDEBAR_WIDTH_KEY in config_data:
+                config.sidebar_width = config_data[cls._SIDEBAR_WIDTH_KEY]
+            if cls._THUMB_VIEW_COLUMNS_KEY in config_data:
+                config.thumb_view_columns = config_data[cls._THUMB_VIEW_COLUMNS_KEY]
             if cls._SIDE_SPLITTER_KEY in config_data:
                 config.side_splitter = config_data[cls._SIDE_SPLITTER_KEY]
         if path_overrides is not None:

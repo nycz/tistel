@@ -79,6 +79,14 @@ class ThumbView(ListWidget):
                 return item
         return None
 
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.setFixedWidth(
+            (self.contentsMargins().left() + self.contentsMargins().right()) * 2
+            + self.gridSize().width() * self.config.thumb_view_columns
+            + self.verticalScrollBar().width()
+        )
+
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if event.key() == Qt.Key_Right:
             next_widget = self.find_visible()

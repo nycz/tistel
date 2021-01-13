@@ -168,7 +168,7 @@ QTreeWidget {
 
 /* Splitters */
 
-QSplitter::handle {
+QSplitter::handle, #main_divider {
   background: #555;
 }
 QSplitter::handle:horizontal {

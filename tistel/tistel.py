@@ -24,6 +24,36 @@ from .tagging_window import TaggingWindow
 from .thumb_view import ProgressBar, ThumbView
 
 
+class Divider(QtWidgets.QFrame):
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName('main_divider')
+        self.sidebar: QtWidgets.QWidget
+        self.thumb_view: QtWidgets.QWidget
+        self.image_view: QtWidgets.QWidget
+        self.x_offset = 0
+
+    def set_widgets(self, sidebar: QtWidgets.QWidget,
+                    thumb_view: QtWidgets.QWidget,
+                    image_view: QtWidgets.QWidget) -> None:
+        self.sidebar = sidebar
+        self.thumb_view = thumb_view
+        self.image_view = image_view
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        self.sidebar.setFixedWidth(min(
+            max(
+                event.windowPos().x() - self.x_offset,
+                self.sidebar.minimumSizeHint().width()
+            ),
+            (self.parent().width() - self.width() - self.thumb_view.width()
+             - self.image_view.minimumSizeHint().width())
+        ))
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        self.x_offset = event.pos().x()
+
+
 class MainWindow(app.RootWindow):
     start_indexing: Signal2[Set[Path], bool] = mk_signal2(set, bool)
 
@@ -39,8 +69,9 @@ class MainWindow(app.RootWindow):
 
         # Main layout
         self.layout().setContentsMargins(0, 0, 0, 0)
-        self.splitter = QtWidgets.QSplitter(self)
-        self.layout().addWidget(self.splitter)
+        self.splitter = QtWidgets.QHBoxLayout()
+        self.splitter.setContentsMargins(0, 0, 0, 0)
+        self.layout().addLayout(self.splitter)
 
         # Statusbar
         progress = ProgressBar(self)
@@ -49,12 +80,16 @@ class MainWindow(app.RootWindow):
 
         # Left column - tags/files/dates and info
         self.sidebar = SideBar(config, self)
-        self.splitter.addWidget(self.sidebar)
+        self.splitter.addWidget(self.sidebar, stretch=0)
+
+        self.split_handle = Divider(self)
+        self.split_handle.setFixedWidth(8)
+        self.split_handle.setCursor(Qt.SplitHCursor)
+        self.splitter.addWidget(self.split_handle, stretch=0)
 
         # Middle column - thumbnails
-        self.thumb_view = ThumbView(progress, config, self.splitter)
-        self.splitter.addWidget(self.thumb_view)
-        self.splitter.setStretchFactor(1, 2)
+        self.thumb_view = ThumbView(progress, config, self)#.splitter)
+        self.splitter.addWidget(self.thumb_view, stretch=0)
 
         self.sidebar.tag_list.tag_state_updated.connect(
             self.update_tag_filter)
@@ -62,7 +97,7 @@ class MainWindow(app.RootWindow):
             self.sidebar.tag_list.set_current_thumb)
 
         # Right column - big image
-        self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self.splitter)
+        self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)#.splitter)
 
         self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')
@@ -106,28 +141,28 @@ class MainWindow(app.RootWindow):
 
         self.image_view.change_image.connect(change_image)
         self.image_view_splitter.addWidget(self.image_view)
-        self.image_view_splitter.setStretchFactor(0, 1)
 
         # Image info box
         self.image_info_box = DetailsBox(self)
         self.image_view_splitter.addWidget(self.image_info_box)
         self.image_view_splitter.setStretchFactor(1, 0)
 
-        self.splitter.addWidget(self.image_view_splitter)
-        self.splitter.setStretchFactor(2, 1)
+        self.splitter.addWidget(self.image_view_splitter, stretch=1)
 
         # Toggle fullscreen
         def toggle_fullscreen() -> None:
             if self.thumb_view.isHidden():
                 self.thumb_view.show()
                 self.sidebar.show()
+                self.showNormal()
             else:
-                self.config.main_splitter = self.splitter.sizes()
+                self.config.sidebar_width = self.sidebar.width()
                 self.config.side_splitter = \
                     self.image_view_splitter.sizes()
                 self.config.save()
                 self.thumb_view.hide()
                 self.sidebar.hide()
+                self.showFullScreen()
 
         cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('f'), self).activated
              ).connect(toggle_fullscreen)
@@ -188,8 +223,10 @@ class MainWindow(app.RootWindow):
         cast(Signal0, self.sidebar.reload_button.clicked).connect(self.index_images)
 
         # Finalize
-        if config.main_splitter:
-            self.splitter.setSizes(config.main_splitter)
+        self.split_handle.set_widgets(self.sidebar, self.thumb_view,
+                                      self.image_view_splitter)
+        if config.sidebar_width:
+            self.sidebar.setFixedWidth(config.sidebar_width)
         if config.side_splitter:
             self.image_view_splitter.setSizes(config.side_splitter)
         self.make_event_filter()
@@ -269,7 +306,7 @@ class MainWindow(app.RootWindow):
                             event: QtCore.QEvent) -> bool:
                 if event.type() == QtCore.QEvent.Close:
                     if self.thumb_view.isVisible():
-                        self.config.main_splitter = self.splitter.sizes()
+                        self.config.sidebar_width = self.sidebar.width()
                         self.config.side_splitter = \
                             self.image_view_splitter.sizes()
                         self.config.save()
