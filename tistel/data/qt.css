@@ -28,6 +28,29 @@
   background: 2px solid #2292efdb;
 }
 
+#thumb_view_status_bar {
+  padding-left: 5px;
+  padding-top: 2px;
+}
+#thumb_view_status_bar[mode="normal"] {
+  background-color: #334;
+}
+#thumb_view_status_bar[mode="select"] {
+  background-color: #364;
+}
+
+#thumb_view_mode_label {
+  font-weight: bold;
+}
+
+#thumb_view_mode_label, #thumb_view_selection_label {
+  color: white;
+}
+
+#thumb_view_selection_label {
+  margin-left: 20px;
+}
+
 #image_view {
   background: black;
 }

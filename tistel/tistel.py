@@ -13,6 +13,8 @@ from libsyntyche.widgets import Signal0, Signal2, mk_signal0, mk_signal2
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
+from .thumb_view import Container as ThumbViewContainer
+from .thumb_view import Mode as ThumbViewMode
 from .details_view import DetailsBox
 from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
@@ -21,7 +23,7 @@ from .shared import CACHE, CSS_FILE, PATH, TAGS, TAGSTATE, THUMBNAILS
 from .sidebar import SideBar
 from .tag_list import TagState
 from .tagging_window import TaggingWindow
-from .thumb_view import ProgressBar, ThumbView
+from .thumb_view import ProgressBar, StatusBar, ThumbView
 
 
 class Divider(QtWidgets.QFrame):
@@ -29,12 +31,12 @@ class Divider(QtWidgets.QFrame):
         super().__init__(parent)
         self.setObjectName('main_divider')
         self.sidebar: QtWidgets.QWidget
-        self.thumb_view: QtWidgets.QWidget
+        self.thumb_view: ThumbViewContainer
         self.image_view: QtWidgets.QWidget
         self.x_offset = 0
 
     def set_widgets(self, sidebar: QtWidgets.QWidget,
-                    thumb_view: QtWidgets.QWidget,
+                    thumb_view: ThumbViewContainer,
                     image_view: QtWidgets.QWidget) -> None:
         self.sidebar = sidebar
         self.thumb_view = thumb_view
@@ -46,8 +48,11 @@ class Divider(QtWidgets.QFrame):
                 event.windowPos().x() - self.x_offset,
                 self.sidebar.minimumSizeHint().width()
             ),
-            (self.parent().width() - self.width() - self.thumb_view.width()
-             - self.image_view.minimumSizeHint().width())
+            (self.parent().width() - self.width()
+             - ((self.thumb_view.width() + self.image_view.minimumSizeHint().width())
+                if self.thumb_view.mode == ThumbViewMode.normal else
+                self.thumb_view.minimumSizeHint().width())
+             )
         ))
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -73,7 +78,7 @@ class MainWindow(app.RootWindow):
         self.splitter.setContentsMargins(0, 0, 0, 0)
         self.layout().addLayout(self.splitter)
 
-        # Statusbar
+        # Progress bar
         progress = ProgressBar(self)
         progress.hide()
         self.layout().addWidget(progress)
@@ -88,8 +93,17 @@ class MainWindow(app.RootWindow):
         self.splitter.addWidget(self.split_handle, stretch=0)
 
         # Middle column - thumbnails
-        self.thumb_view = ThumbView(progress, config, self)#.splitter)
-        self.splitter.addWidget(self.thumb_view, stretch=0)
+        self.thumb_view_container = ThumbViewContainer(self)
+        thumb_view_container_layout = QtWidgets.QVBoxLayout(self.thumb_view_container)
+        thumb_view_container_layout.setContentsMargins(0, 0, 0, 0)
+
+        status_bar = StatusBar(self)
+        thumb_view_container_layout.addWidget(status_bar)
+
+        self.thumb_view = ThumbView(progress, status_bar, config, self.thumb_view_container)
+        thumb_view_container_layout.addWidget(self.thumb_view)
+        self.splitter.addWidget(self.thumb_view_container, stretch=0)
+        self.thumb_view_container.thumb_view = self.thumb_view
 
         self.sidebar.tag_list.tag_state_updated.connect(
             self.update_tag_filter)
@@ -151,21 +165,48 @@ class MainWindow(app.RootWindow):
 
         # Toggle fullscreen
         def toggle_fullscreen() -> None:
-            if self.thumb_view.isHidden():
-                self.thumb_view.show()
+            if self.thumb_view_container.isHidden():
+                self.thumb_view_container.show()
                 self.sidebar.show()
+                self.split_handle.show()
+                self.image_info_box.show()
+                self.thumb_view.setFocus()
                 self.showNormal()
-            else:
+            elif self.thumb_view.allow_fullscreen():
                 self.config.sidebar_width = self.sidebar.width()
-                self.config.side_splitter = \
-                    self.image_view_splitter.sizes()
+                self.config.side_splitter = self.image_view_splitter.sizes()
                 self.config.save()
-                self.thumb_view.hide()
+                self.thumb_view_container.hide()
                 self.sidebar.hide()
+                self.split_handle.hide()
+                self.image_info_box.hide()
+                self.image_view.setFocus()
                 self.showFullScreen()
 
         cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('f'), self).activated
              ).connect(toggle_fullscreen)
+
+        def activate_select_mode() -> None:
+            self.thumb_view.set_mode(ThumbViewMode.select)
+
+        def activate_normal_mode() -> None:
+            self.thumb_view.set_mode(ThumbViewMode.normal)
+
+        cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('v'), self).activated
+             ).connect(activate_select_mode)
+        cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('n'), self).activated
+             ).connect(activate_normal_mode)
+
+        # On thumbnail view mode change
+        def thumb_view_mode_change(mode: ThumbViewMode) -> None:
+            if mode == ThumbViewMode.normal:
+                self.image_view_splitter.show()
+            elif mode == ThumbViewMode.select:
+                self.image_view_splitter.hide()
+            self.thumb_view.scroll_target = \
+                self.thumb_view.indexAt(self.thumb_view.viewport().rect().center())
+
+        self.thumb_view.mode_changed.connect(thumb_view_mode_change)
 
         # Settings dialog
         self.settings_dialog = SettingsWindow(self)
@@ -223,7 +264,7 @@ class MainWindow(app.RootWindow):
         cast(Signal0, self.sidebar.reload_button.clicked).connect(self.index_images)
 
         # Finalize
-        self.split_handle.set_widgets(self.sidebar, self.thumb_view,
+        self.split_handle.set_widgets(self.sidebar, self.thumb_view_container,
                                       self.image_view_splitter)
         if config.sidebar_width:
             self.sidebar.setFixedWidth(config.sidebar_width)
@@ -233,6 +274,15 @@ class MainWindow(app.RootWindow):
         self.show()
         self.index_images()
         self.thumb_view.setFocus()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.thumb_view.available_space_updated(
+            event.size().width()
+            - self.split_handle.x()
+            - self.split_handle.width()
+            - self.image_view.minimumSizeHint().width()
+        )
 
     def show_tagging_dialog(self) -> None:
         current_item = self.thumb_view.currentItem()
@@ -360,7 +410,7 @@ class MainWindow(app.RootWindow):
         # Set the current row to the first visible item
         for item in self.thumb_view:
             if not item.isHidden():
-                self.thumb_view.setCurrentItem(item)
+                self.thumb_view.setCurrentItem(item, QtCore.QItemSelectionModel.NoUpdate)
                 break
         else:
             self.thumb_view.setCurrentRow(-1)

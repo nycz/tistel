@@ -1,6 +1,7 @@
 from typing import Optional
 
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import Qt
 
 from . import jfti
 from .shared import (DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS, IconWidget,
@@ -10,6 +11,7 @@ from .shared import (DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS, IconWidget,
 class DetailsBox(QtWidgets.QScrollArea):
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
+        self.setFocusPolicy(Qt.NoFocus)
         self.setWidgetResizable(True)
         content = QtWidgets.QFrame(self)
         content.setObjectName('info_box')

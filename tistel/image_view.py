@@ -22,6 +22,14 @@ class ImagePreview(QtWidgets.QLabel):
         # TODO: dont hardcode this
         return QtCore.QSize(300, 100)
 
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == Qt.Key_Left:
+            self.change_image.emit(-1)
+        elif event.key() == Qt.Key_Right:
+            self.change_image.emit(1)
+        else:
+            event.ignore()
+
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         super().wheelEvent(event)
         if event.angleDelta().y() > 0:

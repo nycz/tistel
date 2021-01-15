@@ -67,8 +67,6 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
 
 class TagListWidget(ListWidget):
     tag_state_updated = mk_signal0()
-    tag_blacklisted = mk_signal1(str)
-    tag_whitelisted = mk_signal1(str)
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
