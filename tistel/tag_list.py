@@ -79,8 +79,8 @@ class TagListWidget(ListWidget):
         self.setMouseTracking(True)
         self.last_item: Optional[QtWidgets.QListWidgetItem] = None
 
-    def set_current_thumb(self, current: QtWidgets.QListWidgetItem,
-                          previous: QtWidgets.QListWidgetItem) -> None:
+    def set_current_thumb(self, current: Optional[QtGui.QStandardItem],
+                          previous: Optional[QtGui.QStandardItem]) -> None:
         if current is not None:
             self.selected_item_tags = current.data(TAGS)
             self.update()

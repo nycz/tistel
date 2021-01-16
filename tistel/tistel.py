@@ -111,14 +111,14 @@ class MainWindow(app.RootWindow):
             self.sidebar.tag_list.set_current_thumb)
 
         # Right column - big image
-        self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)#.splitter)
+        self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)
 
         self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')
 
-        def load_big_image(current: QtWidgets.QListWidgetItem,
-                           prev: QtWidgets.QListWidgetItem) -> None:
-            if current and not current.isHidden():
+        def load_big_image(current: Optional[QtGui.QStandardItem],
+                           prev: Optional[QtGui.QStandardItem]) -> None:
+            if current:
                 path = current.data(PATH)
                 orientation = try_to_get_orientation(path)
                 pixmap: Optional[QtGui.QPixmap] = None
@@ -135,23 +135,13 @@ class MainWindow(app.RootWindow):
                 self.image_view.setPixmap(None)
                 self.image_info_box.set_info(None)
 
-        cast(Signal2[QtWidgets.QListWidgetItem, QtWidgets.QListWidgetItem],
-             self.thumb_view.currentItemChanged
-             ).connect(load_big_image)
+        self.thumb_view.currentItemChanged.connect(load_big_image)
 
         def change_image(diff: int) -> None:
-            current = max(self.thumb_view.currentRow(), 0)
-            total = self.thumb_view.count()
-            i = current
-            item = self.thumb_view.item
-            for _ in range(total + 1):
-                i = (i + diff) % total
-                if not item(i).isHidden():
-                    self.thumb_view.setCurrentRow(i)
-                    return
-                elif current == i:
-                    self.image_view.setPixmap(None)
-                    return
+            total = self.thumb_view.visibleCount()
+            if total:
+                current = max(self.thumb_view.currentRow(), 0)
+                self.thumb_view.setCurrentRow((current + diff) % total)
 
         self.image_view.change_image.connect(change_image)
         self.image_view_splitter.addWidget(self.image_view)
@@ -203,8 +193,6 @@ class MainWindow(app.RootWindow):
                 self.image_view_splitter.show()
             elif mode == ThumbViewMode.select:
                 self.image_view_splitter.hide()
-            self.thumb_view.scroll_target = \
-                self.thumb_view.indexAt(self.thumb_view.viewport().rect().center())
 
         self.thumb_view.mode_changed.connect(thumb_view_mode_change)
 
@@ -229,9 +217,11 @@ class MainWindow(app.RootWindow):
                     elif skip_thumb_cache:
                         self.load_index(True)
                     if update_names:
-                        for item in self.thumb_view:
+                        count = self.thumb_view.count()
+                        for i in range(count):
+                            item = self.thumb_view.item(i)
                             item.setText(item.data(PATH).name
-                                         if self.config.show_names else None)
+                                         if self.config.show_names else '')
                         self.thumb_view.update_thumb_size()
 
         cast(Signal0, self.sidebar.settings_button.clicked
@@ -379,7 +369,6 @@ class MainWindow(app.RootWindow):
         whitelist = set()
         blacklist = set()
         untagged_state = TagState.DEFAULT
-        tag_count: typing.Counter[str] = Counter()
         for tag_item in self.sidebar.tag_list:
             state = tag_item.data(TAGSTATE)
             tag = tag_item.data(PATH)
@@ -389,29 +378,10 @@ class MainWindow(app.RootWindow):
                 whitelist.add(tag)
             elif state == TagState.BLACKLISTED:
                 blacklist.add(tag)
-        untagged = 0
-        for item in self.thumb_view:
-            tags = item.data(TAGS)
-            if (untagged_state == TagState.WHITELISTED and tags) \
-                    or (untagged_state == TagState.BLACKLISTED and not tags) \
-                    or (whitelist and not whitelist.issubset(tags)) \
-                    or (blacklist and not blacklist.isdisjoint(tags)):
-                if not item.isHidden():
-                    item.setHidden(True)
-            else:
-                if not tags:
-                    untagged += 1
-                else:
-                    tag_count.update(tags)
-                if item.isHidden():
-                    item.setHidden(False)
-        tag_count[''] = untagged
-        self.sidebar.update_tags(tag_count)
-        # Set the current row to the first visible item
-        for item in self.thumb_view:
-            if not item.isHidden():
-                self.thumb_view.setCurrentItem(item, QtCore.QItemSelectionModel.NoUpdate)
-                break
+        self.thumb_view.set_tag_filter(untagged_state, whitelist, blacklist)
+        self.sidebar.update_tags(self.thumb_view.get_tag_count())
+        if self.thumb_view.visibleCount():
+            self.thumb_view.setCurrentRow(0)
         else:
             self.thumb_view.setCurrentRow(-1)
             self.image_view.setPixmap(None)

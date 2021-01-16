@@ -2,6 +2,7 @@ import itertools
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Union, cast
 
+from libsyntyche.widgets import Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
 
@@ -17,6 +18,8 @@ VISIBLE_TAGS = next(_data_ids)
 DEFAULT_COLOR = next(_data_ids)
 HOVERING = next(_data_ids)
 FILEFORMAT = next(_data_ids)
+PATH_STRING = next(_data_ids)
+FILENAME = next(_data_ids)
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
@@ -45,6 +48,61 @@ class ListWidgetItem(QtWidgets.QListWidgetItem):
         else:
             result = super().__lt__(other)  # type: ignore
         return result
+
+
+class ListWidget2(QtWidgets.QListView):
+    currentItemChanged: Signal2[
+        Optional[QtGui.QStandardItem],
+        Optional[QtGui.QStandardItem]
+    ] = mk_signal2(object, object)  # type: ignore
+
+    def __init__(self, parent: QtWidgets.QWidget,
+                 filter_model: Optional[QtCore.QSortFilterProxyModel] = None) -> None:
+        super().__init__(parent)
+        self._model = QtGui.QStandardItemModel()
+        if filter_model is None:
+            self._proxy_model = QtCore.QSortFilterProxyModel()
+        else:
+            self._proxy_model = filter_model
+        self._proxy_model.setDynamicSortFilter(True)
+        self._proxy_model.setSourceModel(self._model)
+        self.setModel(self._proxy_model)
+
+        def current_item_changed(current: QtCore.QModelIndex,
+                                 previous: QtCore.QModelIndex) -> None:
+            self.currentItemChanged.emit(
+                self._model.itemFromIndex(self._proxy_model.mapToSource(current)),
+                self._model.itemFromIndex(self._proxy_model.mapToSource(previous)),
+            )
+
+        cast(Signal2[QtCore.QModelIndex, QtCore.QModelIndex],
+             self.selectionModel().currentChanged).connect(current_item_changed)
+
+    def clear(self) -> None:
+        self._model.clear()
+
+    def visibleCount(self) -> int:
+        return self.model().rowCount()
+
+    def count(self) -> int:
+        return self._model.rowCount()
+
+    def visibleItem(self, pos: int) -> QtGui.QStandardItem:
+        return self._model.itemFromIndex(
+            self._proxy_model.mapToSource(self.model().index(pos, 0)))
+
+    def item(self, pos: int) -> QtGui.QStandardItem:
+        return self._model.item(pos)
+
+    def appendRow(self, item: QtGui.QStandardItem) -> None:
+        self._model.appendRow(item)
+
+    def currentRow(self) -> int:
+        return self.selectionModel().currentIndex().row()
+
+    def setCurrentRow(self, row: int) -> None:
+        self.selectionModel().setCurrentIndex(self.model().index(row, 0),
+                                              QtCore.QItemSelectionModel.NoUpdate)
 
 
 class IconWidget(QtSvg.QSvgWidget):

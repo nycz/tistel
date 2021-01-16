@@ -1,17 +1,18 @@
 import enum
 import json
 from pathlib import Path
-from typing import Any, Counter, List, Optional, Tuple, cast
+from typing import Any, Counter, List, Optional, Set, Tuple, cast
 
 from libsyntyche.widgets import Signal0, Signal2, mk_signal1, mk_signal2
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt, pyqtProperty
+from PyQt5.QtCore import Qt, pyqtProperty  # type: ignore
 
 from . import jfti
 from .image_loading import THUMB_SIZE, ImageLoader
 from .settings import Settings
-from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS,
-                     IconWidget, ListWidget)
+from .shared import (CACHE, DIMENSIONS, FILEFORMAT, FILENAME, FILESIZE, PATH,
+                     PATH_STRING, TAGS, ListWidget2)
+from .tag_list import TagState
 
 
 class Mode(enum.Enum):
@@ -127,13 +128,38 @@ class ProgressBar(QtWidgets.QProgressBar):
                 f' ({value/max(total, 1):.0%})')
 
 
-class ThumbView(ListWidget):
+class FilterProxyModel(QtCore.QSortFilterProxyModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tag_whitelist: Set[str] = set()
+        self.tag_blacklist: Set[str] = set()
+        self.untagged_state: TagState = TagState.DEFAULT
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
+        tags = self.sourceModel().index(source_row, 0, source_parent).data(TAGS)
+        if (self.untagged_state == TagState.WHITELISTED and tags) \
+                or (self.untagged_state == TagState.BLACKLISTED and not tags) \
+                or (self.tag_whitelist and not self.tag_whitelist.issubset(tags)) \
+                or (self.tag_blacklist and not self.tag_blacklist.isdisjoint(tags)):
+            return False
+        return True
+
+    def set_tag_filter(self, untagged_state: TagState,
+                       whitelist: Set[str], blacklist: Set[str]) -> None:
+        self.tag_whitelist = whitelist
+        self.tag_blacklist = blacklist
+        self.untagged_state = untagged_state
+        self.invalidateFilter()
+
+
+class ThumbView(ListWidget2):
     image_queued: Signal2[int, List[Tuple[int, bool, Path]]] = mk_signal2(int, list)
     mode_changed = mk_signal1(Mode)
 
     def __init__(self, progress: ProgressBar, status_bar: StatusBar,
                  config: Settings, parent: QtWidgets.QWidget) -> None:
-        super().__init__(parent)
+        self._filter_model = FilterProxyModel()
+        super().__init__(parent, self._filter_model)
         self._mode = Mode.normal
         self.config = config
         self.progress = progress
@@ -141,14 +167,15 @@ class ThumbView(ListWidget):
         self.status_bar.column_count_label.setValue(self.config.thumb_view_columns)
         self.batch = 0
         self.thumbnails_done = 0
-        self.scroll_ratio: Optional[int] = None
+        self.scroll_ratio: Optional[float] = None
+        self.selected_indexes: List[QtCore.QPersistentModelIndex] = []
 
         self.set_mode(Mode.normal, force=True)
 
         self.setUniformItemSizes(True)
         self.setViewMode(QtWidgets.QListView.IconMode)
-        self.setMovement(QtWidgets.QListWidget.Static)
-        self.setResizeMode(QtWidgets.QListWidget.Adjust)
+        self.setMovement(QtWidgets.QListView.Static)
+        self.setResizeMode(QtWidgets.QListView.Adjust)
         self.setObjectName('thumb_view')
         self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
 
@@ -183,9 +210,54 @@ class ThumbView(ListWidget):
         self.selectionModel().selectionChanged.connect(self.update_selection_info)
         self.update_selection_info()
 
-    def update_selection_info(self, arg1: Any = None, arg2: Any = None) -> None:
+        def update_sorting(action: QtWidgets.QAction) -> None:
+            order = self.model().sortOrder()
+            if action == self.status_bar.sort_by_path:
+                self.model().setSortRole(PATH_STRING)
+            elif action == self.status_bar.sort_by_name:
+                self.model().setSortRole(FILENAME)
+            elif action == self.status_bar.sort_by_size:
+                self.model().setSortRole(FILESIZE)
+            elif action == self.status_bar.sort_ascending:
+                order = Qt.AscendingOrder
+            elif action == self.status_bar.sort_descending:
+                order = Qt.DescendingOrder
+            self.model().sort(0, order)
+
+        self.status_bar.sort_key_group.triggered.connect(update_sorting)
+        self.status_bar.sort_order_group.triggered.connect(update_sorting)
+        update_sorting(self.status_bar.sort_by_path)
+
+    def set_tag_filter(self, *args: Any) -> None:
+        # Disconnect the selection changed signal to stop it from overwriting
+        # the old data when filtering
+        self.selectionModel().selectionChanged.disconnect(self.update_selection_info)
+        self._filter_model.set_tag_filter(*args)
+        for sel_index in self.selected_indexes:
+            index = self._filter_model.mapFromSource(QtCore.QModelIndex(sel_index))
+            if index.isValid():
+                self.selectionModel().select(index, QtCore.QItemSelectionModel.Select)
+        self.selectionModel().selectionChanged.connect(self.update_selection_info)
+
+    def update_selection_info(self, selected: Optional[QtCore.QItemSelection] = None,
+                              deselected: Optional[QtCore.QItemSelection] = None) -> None:
+        if deselected is not None:
+            indexes = deselected.indexes()
+            for rel_index in indexes:
+                index = self._filter_model.mapToSource(rel_index)
+                for n, sel_index in enumerate(self.selected_indexes):
+                    if index == QtCore.QModelIndex(sel_index):
+                        del self.selected_indexes[n]
+                        break
+                else:
+                    print('ERROR: failed to remove selection index!')
+        if selected is not None:
+            self.selected_indexes.extend(
+                QtCore.QPersistentModelIndex(self._filter_model.mapToSource(i))
+                for i in selected.indexes()
+            )
         self.status_bar.selection_label.setText(
-            f'{len(self.selectedItems())}/{self.count()} selected'
+            f'{len(self.selected_indexes)}/{self.count()} selected'
         )
 
     def available_space_updated(self, width: int) -> None:
@@ -196,6 +268,19 @@ class ThumbView(ListWidget):
     def allow_fullscreen(self) -> bool:
         return self._mode == Mode.normal
 
+    def get_tag_count(self) -> Counter[str]:
+        untagged = 0
+        tag_count: Counter[str] = Counter()
+        for row in range(self.visibleCount()):
+            index = self.model().index(row, 0)
+            tags = index.data(TAGS)
+            if not tags:
+                untagged += 1
+            else:
+                tag_count.update(tags)
+        tag_count[''] = untagged
+        return tag_count
+
     def set_mode(self, mode: Mode, force: bool = False) -> None:
         if mode != self._mode or force:
             self._mode = mode
@@ -203,7 +288,7 @@ class ThumbView(ListWidget):
                 self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
             elif mode == Mode.select:
                 self.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
-            self.status_bar.mode = mode.name
+            self.status_bar.mode = mode.name  # type: ignore
             vs = self.verticalScrollBar()
             if vs.maximum() > 0:
                 self.scroll_ratio = vs.value() / vs.maximum()
@@ -214,24 +299,9 @@ class ThumbView(ListWidget):
             text_height = int(QtGui.QFontMetricsF(self.font()).height() * 1.5)
         else:
             text_height = 0
-        self.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))
+        self.setIconSize(THUMB_SIZE + QtCore.QSize(0, text_height))  # type: ignore
         margin = (10 + 3) * 2
-        self.setGridSize(THUMB_SIZE + QtCore.QSize(margin, margin + text_height))
-
-    def find_visible(self, reverse: bool = False
-                     ) -> Optional[QtWidgets.QListWidgetItem]:
-        diff = -1 if reverse else 1
-        total = self.count()
-        i = self.currentRow()
-        if i < 0 or total < 0:
-            return None
-        for _ in range(total):
-            i += diff
-            i %= total
-            item = self.item(i)
-            if not item.isHidden():
-                return item
-        return None
+        self.setGridSize(THUMB_SIZE + QtCore.QSize(margin, margin + text_height))  # type: ignore
 
     @property
     def margin_size(self) -> int:
@@ -261,31 +331,35 @@ class ThumbView(ListWidget):
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if self._mode == Mode.select and event.key() == Qt.Key_A:
-            if event.modifiers() == Qt.ControlModifier:
-                self.selectAll()
+            if int(event.modifiers()) == Qt.ControlModifier:
+                first = self.model().index(0, 0)
+                last = self.model().index(self.model().rowCount() - 1, 0)
+                sel = QtCore.QItemSelection(first, last)
+                self.selectionModel().select(sel, QtCore.QItemSelectionModel.Select)
                 return
-            elif event.modifiers() == Qt.ShiftModifier | Qt.ControlModifier:
-                self.clearSelection()
+            elif event.modifiers() == cast(Qt.KeyboardModifiers,
+                                           Qt.ShiftModifier | Qt.ControlModifier):
+                self.selectionModel().clearSelection()
                 return
         if event.key() in {Qt.Key_Right, Qt.Key_Left, Qt.Key_Up, Qt.Key_Down,
                            Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End,
                            Qt.Key_Space}:
-            p1 = self.currentIndex()
+            p1 = self.selectionModel().currentIndex()
             super().keyPressEvent(event)
-            p2 = self.currentIndex()
-            if self._mode == Mode.select and event.modifiers() & Qt.ShiftModifier:
+            p2 = self.selectionModel().currentIndex()
+            if self._mode == Mode.select and int(event.modifiers()) & Qt.ShiftModifier:
                 s = self.selectionModel().selection()
                 s.select(p1, p2)
-                self.selectionModel().select(s, QtCore.QItemSelectionModel.SelectCurrent)
+                self.selectionModel().select(s, QtCore.QItemSelectionModel.Select)
         else:
             event.ignore()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
-        current = self.currentItem()
-        if current:
+        current = self.selectionModel().currentIndex()
+        if current.isValid():
             painter = QtGui.QPainter(self.viewport())
-            rect = self.visualItemRect(current).adjusted(6, 6, -7, -7)
+            rect = self.visualRect(current).adjusted(6, 6, -7, -7)
             pen = QtGui.QPen(QtGui.QColor('#1bf986'))
             pen.setWidth(2)
             pen.setJoinStyle(Qt.MiterJoin)
@@ -314,20 +388,23 @@ class ThumbView(ListWidget):
                     break
             else:
                 continue
-            item_text = path.name if self.config.show_names else None
-            item = QtWidgets.QListWidgetItem(self.default_icon, item_text)
-            self.addItem(item)
-            item.setData(PATH, path)
-            item.setData(FILESIZE, data['size'])
-            item.setData(TAGS, set(data['tags']))
-            item.setData(DIMENSIONS, (data['w'], data['h']))
-            item.setData(FILEFORMAT, jfti.identify_image_format(path))
+            item_text = path.name if self.config.show_names else ''
+            item = QtGui.QStandardItem(self.default_icon, item_text)
+            item.setEditable(False)
+            self.appendRow(item)
+            item.setData(path, PATH)
+            item.setData(str(path), PATH_STRING)
+            item.setData(path.name, FILENAME)
+            item.setData(data['size'], FILESIZE)
+            item.setData(set(data['tags']), TAGS)
+            item.setData((data['w'], data['h']), DIMENSIONS)
+            item.setData(jfti.identify_image_format(path), FILEFORMAT)
             imgs.append((n, skip_thumb_cache, path))
             n += 1
             tag_count.update(data['tags'])
             if not data['tags']:
                 untagged += 1
-        if self.currentItem() is None:
+        if not self.selectionModel().currentIndex().isValid():
             self.setCurrentRow(0)
         self.image_queued.emit(self.batch, imgs)
         tags = [('', untagged)]

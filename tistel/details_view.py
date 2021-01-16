@@ -1,6 +1,6 @@
 from typing import Optional
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from . import jfti
@@ -35,7 +35,7 @@ class DetailsBox(QtWidgets.QScrollArea):
         layout.addWidget(self.fileformat)
         layout.addStretch()
 
-    def set_info(self, item: Optional[QtWidgets.QListWidgetItem]) -> None:
+    def set_info(self, item: Optional[QtGui.QStandardItem]) -> None:
         if item is None:
             self.directory.clear()
             self.filename.clear()
