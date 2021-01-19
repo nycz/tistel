@@ -7,10 +7,9 @@ from PyQt5.QtWidgets import QPushButton
 
 from .file_tree_view import DirectoryTree
 from .settings import Settings
-from .shared import (PATH, TAGS, TAGSTATE, VISIBLE_TAGS, ListWidgetItem,
-                     make_svg_icon)
-from .tag_list import (TagListWidget, TagState, sort_tag_list_by_alpha,
-                       sort_tag_list_by_tags)
+from .shared import (PATH, TAG_COUNT, TAG_NAME, TAG_STATE, VISIBLE_TAG_COUNT,
+                     make_svg_icon, TagState)
+from .tag_list import TagListItem, TagListWidget
 
 
 class SortButton(QtWidgets.QPushButton):
@@ -103,11 +102,13 @@ class SideBar(QtWidgets.QWidget):
             if not button.isChecked():
                 return
             if button == sort_alpha_button:
-                self.tag_list.sort_func = sort_tag_list_by_alpha
+                self.tag_list.model().setSortRole(TAG_NAME)
+                #sort_func = sort_tag_list_by_alpha
             else:
-                self.tag_list.sort_func = sort_tag_list_by_tags
-            self.tag_list.sortItems(Qt.DescendingOrder
-                                    if button.reversed else Qt.AscendingOrder)
+                self.tag_list.model().setSortRole(TAG_COUNT)
+                #self.tag_list.sort_func = sort_tag_list_by_tags
+            self.tag_list.model().sort(0, Qt.DescendingOrder
+                                       if button.reversed else Qt.AscendingOrder)
 
         def alpha_sort_button_pressed() -> None:
             sort_button_pressed(sort_alpha_button)
@@ -121,8 +122,10 @@ class SideBar(QtWidgets.QWidget):
         self.sort_count_button = sort_count_button
 
         def clear_tag_filters() -> None:
-            for tag in self.tag_list:
-                tag.setData(TAGSTATE, TagState.DEFAULT)
+            for item in self.tag_list.items():
+                item.set_tag_state(TagState.DEFAULT)
+            # for tag in self.tag_list:
+            #     tag.setData(TAG_STATE, TagState.DEFAULT)
             self.tag_list.tag_state_updated.emit()
 
         cast(Signal0, clear_button.clicked).connect(clear_tag_filters)
@@ -151,19 +154,19 @@ class SideBar(QtWidgets.QWidget):
         return f'{tag or "<Untagged>"}   ({visible}/{total})'
 
     def create_tag(self, tag: str, count: int) -> None:
-        item = ListWidgetItem(self._tag_format(tag, count, count))
-        item.setData(PATH, tag)
-        item.setData(TAGS, count)
-        item.setData(VISIBLE_TAGS, count)
-        item.setData(TAGSTATE, TagState.DEFAULT)
+        item = TagListItem(self._tag_format(tag, count, count))
+        item.set_tag_name(tag)
+        item.set_tag_count(count)
+        item.set_visible_tag_count(count)
+        item.set_tag_state(TagState.DEFAULT)
         self.tag_list.addItem(item)
 
     def set_tags(self, tags: List[Tuple[str, int]]) -> None:
         self.tag_list.clear()
         for tag, count in tags:
             self.create_tag(tag, count)
-        untagged = self.tag_list.takeItem(0)
-        self.tag_list.insertItem(0, untagged)
+        # untagged = self.tag_list.takeItem(0)
+        # self.tag_list.insertItem(0, untagged)
         self.sort_tags()
 
     def sort_tags(self) -> None:
@@ -171,12 +174,12 @@ class SideBar(QtWidgets.QWidget):
             button = self.sort_alpha_button
         else:
             button = self.sort_count_button
-        self.tag_list.sortItems(Qt.DescendingOrder
-                                if button.reversed else Qt.AscendingOrder)
+        self.tag_list.model().sort(0, Qt.DescendingOrder
+                                   if button.reversed else Qt.AscendingOrder)
 
     def update_tags(self, tag_count: Dict[str, int]) -> None:
-        for item in self.tag_list:
-            tag = item.data(PATH)
+        for item in self.tag_list.items():
+            tag = item.get_tag_name()
             new_count = tag_count[tag]
-            item.setData(VISIBLE_TAGS, new_count)
-            item.setText(self._tag_format(tag, new_count, item.data(TAGS)))
+            item.set_visible_tag_count(new_count)
+            item.setText(self._tag_format(tag, new_count, item.get_tag_count()))

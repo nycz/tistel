@@ -3,7 +3,7 @@ import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional, Set, Tuple
+from typing import Iterable, Optional, Set, Tuple
 
 _PNG_MAGIC = b'\x89PNG\x0d\x0a\x1a\x0a'
 _JPEG_MAGIC = b'\xff\xd8'
@@ -43,7 +43,7 @@ def identify_image_format(fname: Path) -> Optional[str]:
         if data[3:6] == b'89a':
             return 'image/gif'
         else:
-            raise ImageError(f'Unsupported GIF format: {data[3:6]}')
+            raise ImageError(f'Unsupported GIF format: {data[3:6]!r}')
     return None
 
 
@@ -62,18 +62,22 @@ def dimensions(fname: Path) -> Tuple[int, int]:
         return (-1, -1)
 
 
-def read_tags(fname: Path) -> Set[str]:
+def read_tags(fname: Path) -> Iterable[str]:
     try:
         result = subprocess.check_output(['exiv2', '-p', 'X', str(fname)],
                                          stderr=subprocess.PIPE, encoding='utf-8')
     except subprocess.CalledProcessError as e:
         pass
     else:
+        if not result.strip():
+            return
         root = ET.fromstring(result)
-        yield from ((x.text or '').strip() for x
-                    in root.findall('rdf:RDF/rdf:Description/dc:subject'
-                                    '/rdf:Bag/rdf:li', NS)
-                    if (x.text or '').strip())
+        yield from (
+            tag for raw_tag
+            in root.findall('rdf:RDF/rdf:Description/dc:subject'
+                            '/rdf:Bag/rdf:li', NS)
+            if (tag := (raw_tag.text or '').strip())
+        )
 
 
 def set_tags(fname: Path, tags: Set[str], safe: bool = True) -> None:
@@ -86,8 +90,9 @@ def set_tags(fname: Path, tags: Set[str], safe: bool = True) -> None:
         result = subprocess.check_output(args, stderr=subprocess.PIPE,
                                          encoding='utf-8')
     except subprocess.CalledProcessError as e:
+        stderr: str = e.stderr
         raise ImageError(f'running exiv2 failed on image {fname!r}!\n'
-                         f'stderr: {e.stderr!r}')
+                         f'stderr: {stderr!r}')
     else:
         if result:
             print(f'\x1b[31mWarnings when tags added to file {fname!r}\x1b[0m')

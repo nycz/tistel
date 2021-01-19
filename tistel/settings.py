@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 from pathlib import Path
 from typing import List, Optional, Set, Type, TypeVar, cast
@@ -8,6 +9,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
 from .shared import CONFIG
+
+# mypy: disallow-any-expr
 
 T = TypeVar('T', bound='Settings')
 
@@ -64,27 +67,28 @@ class Settings:
         self.paths.update(other.paths)
 
     @classmethod
-    def load(cls: Type[T], path_overrides: Optional[List[Path]]) -> T:
+    def load(cls, path_overrides: Optional[List[Path]]) -> Settings:
         if not CONFIG.exists():
             if not CONFIG.parent.exists():
                 CONFIG.parent.mkdir(parents=True)
-            default_config = cls()
+            default_config = Settings()
             default_config.save()
             config = default_config
         else:
-            config_data = json.loads(CONFIG.read_text())
-            config = cls()
-            if cls._PATHS_KEY in config_data:
-                config.paths = {Path(p).expanduser()
-                                for p in config_data[cls._PATHS_KEY]}
-            if cls._SHOW_NAMES_KEY in config_data:
-                config.show_names = config_data[cls._SHOW_NAMES_KEY]
-            if cls._SIDEBAR_WIDTH_KEY in config_data:
-                config.sidebar_width = config_data[cls._SIDEBAR_WIDTH_KEY]
-            if cls._THUMB_VIEW_COLUMNS_KEY in config_data:
-                config.thumb_view_columns = config_data[cls._THUMB_VIEW_COLUMNS_KEY]
-            if cls._SIDE_SPLITTER_KEY in config_data:
-                config.side_splitter = config_data[cls._SIDE_SPLITTER_KEY]
+            config_data: Dict[str, Any] = json.loads(CONFIG.read_text())  # type: ignore
+            config = Settings()
+            if Settings._PATHS_KEY in config_data:
+                config.paths = {Path(p).expanduser()  # type: ignore
+                                for p in config_data[Settings._PATHS_KEY]}  # type: ignore
+            if Settings._SHOW_NAMES_KEY in config_data:
+                config.show_names = config_data[Settings._SHOW_NAMES_KEY]
+            if Settings._SIDEBAR_WIDTH_KEY in config_data:
+                config.sidebar_width = config_data[Settings._SIDEBAR_WIDTH_KEY]
+            if Settings._THUMB_VIEW_COLUMNS_KEY in config_data:
+                config.thumb_view_columns = \
+                    config_data[Settings._THUMB_VIEW_COLUMNS_KEY]
+            if Settings._SIDE_SPLITTER_KEY in config_data:
+                config.side_splitter = config_data[Settings._SIDE_SPLITTER_KEY]
         if path_overrides is not None:
             config.path_overrides = {p.resolve() for p in path_overrides}
         return config
@@ -183,7 +187,8 @@ class SettingsWindow(QtWidgets.QDialog):
 
         # Action buttons
         layout.addSpacing(10)
-        btm_buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Save)
+        btm_buttons = QDialogButtonBox(cast(QDialogButtonBox.StandardButtons,
+                                            QDialogButtonBox.Cancel | QDialogButtonBox.Save))
         layout.addWidget(btm_buttons)
         cast(Signal0, btm_buttons.accepted).connect(self.accept)
         cast(Signal0, btm_buttons.rejected).connect(self.reject)
@@ -226,7 +231,8 @@ class SettingsWindow(QtWidgets.QDialog):
     def add_directory(self) -> None:
         roots = QtCore.QStandardPaths.standardLocations(
             QtCore.QStandardPaths.PicturesLocation)
-        root = roots[0] if roots else str(Path.home())
+        _home = Path.home()  # type: ignore
+        root = roots[0] if roots else str(_home)
         new_dir = QtWidgets.QFileDialog.getExistingDirectory(
             self, 'Choose a directory', root)
         if new_dir:

@@ -3,9 +3,9 @@ from typing import Optional
 from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from . import jfti
-from .shared import (DIMENSIONS, FILEFORMAT, FILESIZE, PATH, TAGS, IconWidget,
-                     clear_layout, human_filesize)
+from . import jfti, shared
+from .shared import (IconWidget, clear_layout, human_filesize)
+from .thumb_view import ThumbViewItem
 
 
 class DetailsBox(QtWidgets.QScrollArea):
@@ -35,7 +35,7 @@ class DetailsBox(QtWidgets.QScrollArea):
         layout.addWidget(self.fileformat)
         layout.addStretch()
 
-    def set_info(self, item: Optional[QtGui.QStandardItem]) -> None:
+    def set_info(self, item: Optional[ThumbViewItem]) -> None:
         if item is None:
             self.directory.clear()
             self.filename.clear()
@@ -43,20 +43,19 @@ class DetailsBox(QtWidgets.QScrollArea):
             self.dimensions.clear()
             clear_layout(self.tag_box)
         else:
-            path = item.data(PATH)
+            path = item.get_path()
             self.directory.setText(f'<b>Directory:</b> {path.parent}')
             self.filename.setText(f'<b>Name:</b> {path.name}')
-            fmt = item.data(FILEFORMAT)
+            fmt = item.get_file_format()
             if jfti.image_format_mismatch(path, fmt):
-                self.fileformat.setText(f'<b>Mismatching format:</b> '
-                                        f'{fmt.name}')
+                self.fileformat.setText(f'<b>Mismatching format:</b> {fmt}')
             else:
                 self.fileformat.clear()
-            width, height = item.data(DIMENSIONS)
+            width, height = item.get_dimensions()
             self.dimensions.setText(f'<b>Dimensions:</b> {width} x {height}')
-            size = item.data(FILESIZE)
+            size = item.get_file_size()
             self.filesize.setText(f'<b>Size:</b> {human_filesize(size)}')
-            tags = item.data(TAGS)
+            tags = item.get_tags()
             clear_layout(self.tag_box)
             for n, tag in enumerate(tags):
                 tag_icon = IconWidget('tag', 16, self)

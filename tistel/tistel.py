@@ -6,7 +6,7 @@ import time
 import typing
 from collections import Counter
 from pathlib import Path
-from typing import Optional, Set, cast
+from typing import List, Optional, Set, cast
 
 from libsyntyche import app
 from libsyntyche.widgets import Signal0, Signal2, mk_signal0, mk_signal2
@@ -19,11 +19,11 @@ from .details_view import DetailsBox
 from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import CACHE, CSS_FILE, PATH, TAGS, TAGSTATE, THUMBNAILS
+from .shared import (CACHE, CSS_FILE, PATH, TAG_COUNT, TAG_NAME, TAG_STATE,
+                     THUMBNAILS, Cache, TagState)
 from .sidebar import SideBar
-from .tag_list import TagState
 from .tagging_window import TaggingWindow
-from .thumb_view import ProgressBar, StatusBar, ThumbView
+from .thumb_view import ProgressBar, StatusBar, ThumbView, ThumbViewItem
 
 
 class Divider(QtWidgets.QFrame):
@@ -43,17 +43,18 @@ class Divider(QtWidgets.QFrame):
         self.image_view = image_view
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        self.sidebar.setFixedWidth(min(
+        self.sidebar.setFixedWidth(int(min(
             max(
                 event.windowPos().x() - self.x_offset,
                 self.sidebar.minimumSizeHint().width()
             ),
-            (self.parent().width() - self.width()
-             - ((self.thumb_view.width() + self.image_view.minimumSizeHint().width())
-                if self.thumb_view.mode == ThumbViewMode.normal else
-                self.thumb_view.minimumSizeHint().width())
-             )
-        ))
+            (
+                cast(QtWidgets.QWidget, self.parent()).width() - self.width()
+                - ((self.thumb_view.width() + self.image_view.minimumSizeHint().width())
+                   if self.thumb_view.mode == ThumbViewMode.normal else
+                   self.thumb_view.minimumSizeHint().width())
+            ),
+        )))
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         self.x_offset = event.pos().x()
@@ -62,7 +63,7 @@ class Divider(QtWidgets.QFrame):
 class MainWindow(app.RootWindow):
     start_indexing: Signal2[Set[Path], bool] = mk_signal2(set, bool)
 
-    def __init__(self, config: Settings, activation_event: Signal0) -> None:
+    def __init__(self, config: Settings) -> None:
         super().__init__('tistel')
         # Make thumbnails directory if needed
         if not THUMBNAILS.exists():
@@ -116,17 +117,17 @@ class MainWindow(app.RootWindow):
         self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')
 
-        def load_big_image(current: Optional[QtGui.QStandardItem],
-                           prev: Optional[QtGui.QStandardItem]) -> None:
+        def load_big_image(current: Optional[ThumbViewItem],
+                           prev: Optional[ThumbViewItem]) -> None:
             if current:
-                path = current.data(PATH)
+                path = current.get_path()
                 orientation = try_to_get_orientation(path)
                 pixmap: Optional[QtGui.QPixmap] = None
                 if orientation:
                     transform = set_rotation(orientation)
                     if not transform.isIdentity():
                         img = QtGui.QImage(str(path)).transformed(transform)
-                        pixmap = QtGui.QPixmap.fromImage(img)
+                        pixmap: QtGui.QPixmap = QtGui.QPixmap.fromImage(img)  # type: ignore
                 if pixmap is None:
                     pixmap = QtGui.QPixmap(str(path))
                 self.image_view.setPixmap(pixmap)
@@ -218,9 +219,8 @@ class MainWindow(app.RootWindow):
                         self.load_index(True)
                     if update_names:
                         count = self.thumb_view.count()
-                        for i in range(count):
-                            item = self.thumb_view.item(i)
-                            item.setText(item.data(PATH).name
+                        for item in self.thumb_view.items():
+                            item.setText(item.get_path().name
                                          if self.config.show_names else '')
                         self.thumb_view.update_thumb_size()
 
@@ -275,7 +275,7 @@ class MainWindow(app.RootWindow):
         )
 
     def show_tagging_dialog(self) -> None:
-        current_item = self.thumb_view.currentItem()
+        # current_item = self.thumb_view.currentItem()
         selected_items = self.thumb_view.selectedItems()
         self.tagging_dialog.set_up(self.tag_count, selected_items)
         result = self.tagging_dialog.exec_()
@@ -291,52 +291,51 @@ class MainWindow(app.RootWindow):
         if not CACHE.exists():
             print('WARNING: no cache! probably reload ??')
             return
-        cache = json.loads(CACHE.read_text())
-        cache['updated'] = time.time()
-        img_cache = cache['images']
-        for fname, tags in updated_files.items():
-            path_str = str(fname)
-            if path_str not in img_cache:
+        cache = Cache.load()
+        cache.updated = time.time()
+        for path, tags in updated_files.items():
+            if path not in cache.images:
                 print('WARNING: img not in cache ??')
                 continue
-            img_cache[path_str]['tags'] = list(tags)
-        CACHE.write_text(json.dumps(cache))
+            cache.images[path].tags = list(tags)
+        cache.save()
         # Update the tag list
         self.tag_count.update(new_tag_count)
-        untagged_item = self.sidebar.tag_list.takeItem(0)
-        untagged_item.setData(TAGS, (untagged_item.data(TAGS)
-                                     + untagged_diff))
+        print(list(self.sidebar.tag_list.items()))
+        untagged_item = self.sidebar.tag_list.takeRow(0)
+        untagged_item.set_tag_count(untagged_item.get_tag_count() + untagged_diff)
         tag_items_to_delete = []
-        for i in range(self.sidebar.tag_list.count()):
-            tag_item = self.sidebar.tag_list.item(i)
-            tag = tag_item.data(PATH)
+        for i, tag_item in enumerate(self.sidebar.tag_list.items()):
+            print(i, tag_item, list(self.sidebar.tag_list.items()))
+            # tag_item = self.sidebar.tag_list.item(i)
+            tag = tag_item.get_tag_name()
             diff = new_tag_count.get(tag, 0)
             if diff != 0:
-                new_count = tag_item.data(TAGS) + diff
+                new_count = tag_item.get_tag_count() + diff
                 if new_count <= 0:
                     del self.tag_count[tag]
                     tag_items_to_delete.append(i)
-                tag_item.setData(TAGS, new_count)
+                tag_item.set_tag_count(new_count)
         # Get rid of the items in reverse order
         # to not mess up the numbers
         for i in reversed(tag_items_to_delete):
-            self.sidebar.tag_list.takeItem(i)
+            self.sidebar.tag_list.takeRow(i)
         for tag in created_tags:
             count = new_tag_count.get(tag, 0)
             if count > 0:
                 self.sidebar.create_tag(tag, count)
-        self.sidebar.tag_list.insertItem(0, untagged_item)
+        self.sidebar.tag_list.insertRow(0, untagged_item)
         self.sidebar.sort_tags()
         self.update_tag_filter()
         # Go back to the same selected items as before (if visible)
-        for item in self.thumb_view.selectedItems():
-            if (item.isHidden() or item not in selected_items) \
-                    and item.isSelected():
-                item.setSelected(False)
-        for item in selected_items:
-            if not item.isHidden() and not item.isSelected():
-                item.setSelected(True)
-        self.thumb_view.setCurrentItem(current_item)
+        # for item in self.thumb_view.selectedItems():
+        #     if (item.isHidden() or item not in selected_items) \
+        #             and item.isSelected():
+        #         item.setSelected(False)
+        # for item in selected_items:
+        #     if not item.isHidden() and not item.isSelected():
+        #         item.setSelected(True)
+        # self.thumb_view.setCurrentItem(current_item)
         self.thumb_view.verticalScrollBar()\
             .setSliderPosition(slider_pos)
 
@@ -369,9 +368,9 @@ class MainWindow(app.RootWindow):
         whitelist = set()
         blacklist = set()
         untagged_state = TagState.DEFAULT
-        for tag_item in self.sidebar.tag_list:
-            state = tag_item.data(TAGSTATE)
-            tag = tag_item.data(PATH)
+        for tag_item in self.sidebar.tag_list.items():
+            state = tag_item.get_tag_state()
+            tag = tag_item.get_tag_name()
             if tag == '':
                 untagged_state = state
             elif state == TagState.WHITELISTED:
@@ -391,7 +390,7 @@ def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--path', nargs='+', dest='paths',
-                        metavar='path', type=Path,
+                        metavar='path', type=Path,  # type: ignore
                         help='Use these paths instead of the settings')
     logging.basicConfig()
 
@@ -411,8 +410,9 @@ def main() -> int:
     app.installEventFilter(event_filter)
     app.setStyleSheet(CSS_FILE.read_text())
 
-    config = Settings.load(args.paths)
-    window = MainWindow(config, event_filter.activation_event)
+    paths: List[Path] = args.paths
+    config = Settings.load(paths)
+    window = MainWindow(config)
     app.setActiveWindow(window)
     sys.exit(app.exec_())
 

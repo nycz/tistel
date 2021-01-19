@@ -1,4 +1,3 @@
-import typing
 from pathlib import Path
 from typing import Any, Counter, Dict, List, Set, Tuple, cast
 
@@ -7,18 +6,18 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
-from . import jfti
-from .shared import PATH, TAG_COUNT, TAGS, ListWidget, ListWidgetItem
+from . import jfti, shared
+from .shared import ListWidget2
+from .thumb_view import ThumbViewItem
 
 
-def sort_tag_list_by_num_and_alpha(a: QtWidgets.QListWidgetItem,
-                                   b: QtWidgets.QListWidgetItem) -> bool:
-    def get_data(x: QtWidgets.QListWidgetItem) -> Tuple[Any, ...]:
-        # visible = x.data(TAG_COUNT)[0]
-        checked = x.checkState() == Qt.Unchecked
-        return (checked, x.data(PATH).lower(), *x.data(TAG_COUNT))
-
-    return get_data(a) < get_data(b)
+class SortProxyModel(QtCore.QSortFilterProxyModel):
+    def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex) -> bool:
+        def get_data(x: QtCore.QModelIndex) -> Tuple[bool, str, int, int]:
+            item = cast(TaggingListItem, self.sourceModel().itemFromIndex(x))
+            checked = item.checkState() == Qt.Unchecked
+            return (checked, item.get_tag_name().lower(), *item.get_tag_count())
+        return get_data(left) < get_data(right)
 
 
 class TagInput(QtWidgets.QLineEdit):
@@ -27,7 +26,7 @@ class TagInput(QtWidgets.QLineEdit):
     def event(self, raw_ev: QtCore.QEvent) -> bool:
         if raw_ev.type() == QtCore.QEvent.KeyPress:
             ev = cast(QtGui.QKeyEvent, raw_ev)
-            if ev.key() == Qt.Key_Backtab and ev.modifiers() == Qt.ShiftModifier:
+            if ev.key() == Qt.Key_Backtab and int(ev.modifiers()) == Qt.ShiftModifier:
                 comp = self.completer()
                 if not comp.popup().isVisible():
                     return False
@@ -43,7 +42,7 @@ class TagInput(QtWidgets.QLineEdit):
                     comp.setCurrentRow(comp.currentRow() - 1)
                     comp.popup().setCurrentIndex(comp.currentIndex())
                 return True
-            elif ev.key() == Qt.Key_Tab and ev.modifiers() == Qt.NoModifier:
+            elif ev.key() == Qt.Key_Tab and int(ev.modifiers()) == Qt.NoModifier:
                 comp = self.completer()
                 if not comp.popup().isVisible():
                     return False
@@ -64,6 +63,25 @@ class TagInput(QtWidgets.QLineEdit):
                 cast(Signal0, self.returnPressed).emit()
                 return True
         return super().event(raw_ev)
+
+
+class TaggingListItem(QtGui.QStandardItem):
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.setCheckable(True)
+        self.setEditable(False)
+
+    def get_tag_count(self) -> Tuple[int, int]:
+        return cast(Tuple[int, int], self.data(shared.TAG_COUNT))
+
+    def get_tag_name(self) -> str:
+        return cast(str, self.data(shared.TAG_NAME))
+
+    def set_tag_count(self, count: int, total_count: int) -> None:
+        self.setData((count, total_count), shared.TAG_COUNT)
+
+    def set_tag_name(self, tag_name: str) -> None:
+        self.setData(tag_name, shared.TAG_NAME)
 
 
 class TaggingWindow(QtWidgets.QDialog):
@@ -99,13 +117,14 @@ class TaggingWindow(QtWidgets.QDialog):
 
         # Tag list
         layout.addWidget(QtWidgets.QLabel('All tags'))
-        self.tag_list = ListWidget(self)
-        self.tag_list.sort_func = sort_tag_list_by_num_and_alpha
+        self._sort_model = SortProxyModel()
+        self.tag_list: ListWidget2[TaggingListItem] = ListWidget2(self, self._sort_model)
+        # self.tag_list.sort_func = sort_tag_list_by_num_and_alpha
         layout.addWidget(self.tag_list)
 
-        def just_sort(x: QtWidgets.QListWidgetItem) -> None:
-            self.tag_list.sortItems()
-        cast(Signal1[QtWidgets.QListWidgetItem], self.tag_list.itemChanged).connect(just_sort)
+        # def just_sort(x: QtWidgets.QListWidgetItem) -> None:
+        #     self.tag_list.sortItems()
+        # cast(Signal1[QtCore.Q], self.tag_list.itemChanged).connect(just_sort)
 
         # Buttons
         button_box = QDialogButtonBox(self)
@@ -118,23 +137,23 @@ class TaggingWindow(QtWidgets.QDialog):
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if event.key() == Qt.Key_Return:
-            if event.modifiers() & Qt.ControlModifier:
+            if int(event.modifiers()) & Qt.ControlModifier:
                 self.accept()
         else:
             super().keyPressEvent(event)
 
     def get_tags_to_add(self) -> Set[str]:
         out = set()
-        for item in self.tag_list:
+        for item in self.tag_list.items():
             if item.checkState() == Qt.Checked:
-                out.add(item.data(PATH))
+                out.add(item.get_tag_name())
         return out
 
     def get_tags_to_remove(self) -> Set[str]:
         out = set()
-        for item in self.tag_list:
+        for item in self.tag_list.items():
             if item.checkState() == Qt.Unchecked:
-                out.add(item.data(PATH))
+                out.add(item.get_tag_name())
         return out
 
     def add_tag(self) -> None:
@@ -142,36 +161,35 @@ class TaggingWindow(QtWidgets.QDialog):
             return
         tag = self.tag_input.text().strip()
         if tag:
-            tags = {item.data(PATH): item for item in self.tag_list}
+            tags = {item.get_tag_name(): item for item in self.tag_list.items()}
             if tag in tags:
                 item = tags[tag]
                 item.setCheckState(Qt.Checked)
             else:
-                item = ListWidgetItem(f'{tag} (NEW)')
-                item.setData(PATH, tag)
-                item.setData(TAG_COUNT, (0, 0))
+                item = TaggingListItem(f'{tag} (NEW)')
+                item.set_tag_name(tag)
+                item.set_tag_count(0, 0)
                 item.setCheckState(Qt.Checked)
-                self.tag_list.insertItem(0, item)
+                self.tag_list.insertRow(0, item)
             self.tag_input.clear()
-            self.tag_list.sortItems()
+            # self.tag_list.sortItems()
 
-    def set_up(self, tags: typing.Counter[str],
-               images: List[QtWidgets.QListWidgetItem]) -> None:
+    def set_up(self, tags: Counter[str], images: List[ThumbViewItem]) -> None:
         self.original_tags = tags
         self.accept_button.setText(f'Apply to {len(images)} images')
         self.tag_input.clear()
         self.tag_list.clear()
-        tag_counter: typing.Counter[str] = Counter()
+        tag_counter: Counter[str] = Counter()
         for img in images:
-            img_tags = img.data(TAGS)
+            img_tags = img.get_tags()
             tag_counter.update(img_tags)
         model = QtCore.QStringListModel(tags.keys())
         self.completer.setModel(model)
         for tag, total in tags.items():
             count = tag_counter.get(tag, 0)
-            item = ListWidgetItem(f'{tag} ({count}/{total})')
-            item.setData(PATH, tag)
-            item.setData(TAG_COUNT, (count, total))
+            item = TaggingListItem(f'{tag} ({count}/{total})')
+            item.set_tag_name(tag)
+            item.set_tag_count(count, total)
             if count == len(images):
                 item.setCheckState(Qt.Checked)
             elif count == 0:
@@ -179,10 +197,10 @@ class TaggingWindow(QtWidgets.QDialog):
             else:
                 item.setCheckState(Qt.PartiallyChecked)
             self.tag_list.addItem(item)
-        self.tag_list.sortItems()
+        # self.tag_list.sortItems()
         self.tag_input.setFocus()
 
-    def tag_images(self, items: List[QtWidgets.QListWidgetItem]
+    def tag_images(self, items: List[ThumbViewItem]
                    ) -> Tuple[int, Dict[Path, Set[str]],
                               Counter[str], Set[str]]:
         # Progress dialog
@@ -204,21 +222,21 @@ class TaggingWindow(QtWidgets.QDialog):
             progress_dialog.setLabelText(f'Tagging images... '
                                          f'({n}/{total})')
             progress_dialog.setValue(n)
-            old_tags = item.data(TAGS)
+            old_tags = item.get_tags()
             new_tags = (old_tags | tags_to_add) - tags_to_remove
             if old_tags != new_tags:
                 added_tags = new_tags - old_tags
                 removed_tags = old_tags - new_tags
                 new_tag_count.update({t: 1 for t in added_tags})
                 new_tag_count.update({t: -1 for t in removed_tags})
-                path = item.data(PATH)
+                path = item.get_path()
                 try:
                     jfti.set_tags(path, new_tags)
                 except Exception:
                     print('FAIL', path)
                     raise
-                item.setData(TAGS, new_tags)
-                updated_files[item.data(PATH)] = new_tags
+                item.set_tags(new_tags)
+                updated_files[item.get_path()] = new_tags
                 if not old_tags and new_tags:
                     untagged_diff -= 1
                 elif old_tags and not new_tags:

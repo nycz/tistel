@@ -1,60 +1,105 @@
+from __future__ import annotations
+import enum
 import itertools
-from pathlib import Path
-from typing import Any, Callable, Iterator, Optional, Union, cast
+import json
+from dataclasses import dataclass
+from pathlib import PosixPath, Path
+from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, TypeVar, Union, cast
 
 from libsyntyche.widgets import Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
 
+# mypy: disallow-any-expr
+
 _data_ids = itertools.count(start=Qt.UserRole)
 
 PATH = next(_data_ids)
 DIMENSIONS = next(_data_ids)
-FILESIZE = next(_data_ids)
+FILE_SIZE = next(_data_ids)
 TAGS = next(_data_ids)
-TAGSTATE = next(_data_ids)
+TAG_STATE = next(_data_ids)
+TAG_NAME = next(_data_ids)
 TAG_COUNT = next(_data_ids)
-VISIBLE_TAGS = next(_data_ids)
+VISIBLE_TAG_COUNT = next(_data_ids)
 DEFAULT_COLOR = next(_data_ids)
 HOVERING = next(_data_ids)
-FILEFORMAT = next(_data_ids)
+FILE_FORMAT = next(_data_ids)
 PATH_STRING = next(_data_ids)
-FILENAME = next(_data_ids)
+FILE_NAME = next(_data_ids)
 
-CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
-CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
-THUMBNAILS = Path.home() / '.thumbnails' / 'normal'
+_home = Path.home()  # type: ignore
+CONFIG = _home / '.config' / 'tistel' / 'config.json'
+CACHE = _home / '.cache' / 'tistel' / 'cache.json'
+THUMBNAILS = _home / '.thumbnails' / 'normal'
 DATA_PATH = Path(__file__).resolve().parent / 'data'
 CSS_FILE = DATA_PATH / 'qt.css'
 
 
-class ListWidget(QtWidgets.QListWidget):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.sort_func: Optional[Callable[['ListWidgetItem',
-                                           'ListWidgetItem'], bool]] = None
-
-    def __iter__(self) -> Iterator[QtWidgets.QListWidgetItem]:
-        for i in range(self.count()):
-            yield self.item(i)
+class TagState(enum.Enum):
+    WHITELISTED = enum.auto()
+    BLACKLISTED = enum.auto()
+    DEFAULT = enum.auto()
 
 
-class ListWidgetItem(QtWidgets.QListWidgetItem):
-    def __lt__(self, other: QtWidgets.QListWidgetItem) -> bool:
-        result: bool
-        sort_func = cast(ListWidget, self.listWidget()).sort_func
-        if sort_func is not None:
-            result = sort_func(self, cast(ListWidgetItem, other))
-        else:
-            result = super().__lt__(other)  # type: ignore
-        return result
+@dataclass
+class CachedImageData:
+    tags: List[str]
+    size: int
+    w: int
+    h: int
+    mtime: float
+    ctime: float
 
 
-class ListWidget2(QtWidgets.QListView):
-    currentItemChanged: Signal2[
-        Optional[QtGui.QStandardItem],
-        Optional[QtGui.QStandardItem]
-    ] = mk_signal2(object, object)  # type: ignore
+@dataclass
+class Cache:
+    updated: float
+    images: Dict[Path, CachedImageData]
+
+    @classmethod
+    def load(cls) -> Cache:
+        data: Dict[str, Union[float, Dict[str, Union[List[str], int, float]]]] = \
+            json.loads(CACHE.read_text())
+        return Cache(
+            updated=cast(float, data['updated']),
+            images={
+                Path(k): CachedImageData(
+                    tags=v['tags'],
+                    size=v['size'],
+                    w=v['w'],
+                    h=v['h'],
+                    mtime=v['mtime'],
+                    ctime=v['ctime'],
+                )  # **cast(Dict[str, Union[List[str], int, float]], v))
+                for k, v in data['images'].items()
+            }
+        )
+
+    def save(self) -> None:
+        if not CACHE.parent.exists():
+            CACHE.parent.mkdir(parents=True)
+        CACHE.write_text(json.dumps({
+            'updated': self.updated,
+            'images': {
+                str(path): {
+                    'tags': img_data.tags,
+                    'size': img_data.size,
+                    'w': img_data.w,
+                    'h': img_data.h,
+                    'mtime': img_data.mtime,
+                    'ctime': img_data.ctime,
+                }
+                for path, img_data in self.images.items()
+            }
+        }))
+
+
+T = TypeVar('T', bound=QtGui.QStandardItem)
+
+class ListWidget2(QtWidgets.QListView, Generic[T]):
+    currentItemChanged: Signal2[Optional[T], Optional[T]] = \
+        mk_signal2(object, object)  # type: ignore
 
     def __init__(self, parent: QtWidgets.QWidget,
                  filter_model: Optional[QtCore.QSortFilterProxyModel] = None) -> None:
@@ -71,8 +116,8 @@ class ListWidget2(QtWidgets.QListView):
         def current_item_changed(current: QtCore.QModelIndex,
                                  previous: QtCore.QModelIndex) -> None:
             self.currentItemChanged.emit(
-                self._model.itemFromIndex(self._proxy_model.mapToSource(current)),
-                self._model.itemFromIndex(self._proxy_model.mapToSource(previous)),
+                cast(T, self._model.itemFromIndex(self._proxy_model.mapToSource(current))),
+                cast(T, self._model.itemFromIndex(self._proxy_model.mapToSource(previous))),
             )
 
         cast(Signal2[QtCore.QModelIndex, QtCore.QModelIndex],
@@ -87,15 +132,21 @@ class ListWidget2(QtWidgets.QListView):
     def count(self) -> int:
         return self._model.rowCount()
 
-    def visibleItem(self, pos: int) -> QtGui.QStandardItem:
-        return self._model.itemFromIndex(
-            self._proxy_model.mapToSource(self.model().index(pos, 0)))
+    def visibleItem(self, pos: int) -> T:
+        return cast(T, self._model.itemFromIndex(
+            self._proxy_model.mapToSource(self.model().index(pos, 0))))
 
-    def item(self, pos: int) -> QtGui.QStandardItem:
-        return self._model.item(pos)
+    def item(self, pos: int) -> T:
+        return cast(T, self._model.item(pos))
 
-    def appendRow(self, item: QtGui.QStandardItem) -> None:
+    def itemFromIndex(self, index: QtCore.QModelIndex) -> T:
+        return cast(T, self._model.itemFromIndex(self._proxy_model.mapToSource(index)))
+
+    def appendRow(self, item: T) -> None:
         self._model.appendRow(item)
+
+    def insertRow(self, row: int, item: T) -> None:
+        self._model.insertRow(row, item)
 
     def currentRow(self) -> int:
         return self.selectionModel().currentIndex().row()
@@ -103,6 +154,26 @@ class ListWidget2(QtWidgets.QListView):
     def setCurrentRow(self, row: int) -> None:
         self.selectionModel().setCurrentIndex(self.model().index(row, 0),
                                               QtCore.QItemSelectionModel.NoUpdate)
+
+    def items(self) -> Iterable[T]:
+        for i in range(self._model.rowCount()):
+            yield cast(T, self._model.item(i))
+
+    def visibleItems(self) -> Iterable[T]:
+        for i in range(self.model().rowCount()):
+            yield self.visibleItem(i)
+
+    def addItem(self, item: T) -> None:
+        self._model.appendRow(item)
+
+    def itemAt(self, p: QtCore.QPoint) -> Optional[T]:
+        index = self.indexAt(p)
+        if index.isValid():
+            return cast(T, self._model.itemFromIndex(self._proxy_model.mapToSource(index)))
+        return None
+
+    def takeRow(self, pos: int) -> T:
+        return cast(T, self._model.takeRow(pos)[0])
 
 
 class IconWidget(QtSvg.QSvgWidget):
