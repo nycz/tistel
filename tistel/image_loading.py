@@ -1,5 +1,4 @@
 import hashlib
-import json
 import logging
 import struct
 import subprocess
@@ -112,7 +111,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     data = pngbytes.data()
     # let's figure out where to insert our P-P-P-PAYLOAD *obnoxious air horns*
     offset = 8
-    first_chunk_length = cast(int, struct.unpack('>I', data[offset:offset+4])[0])  # type: ignore
+    first_chunk_length = cast(int, struct.unpack('>I', data[offset:offset+4])[0])
     offset += 12 + first_chunk_length
     mtime = png_text_chunk(b'Thumb::MTime',
                            str(int(image_path.stat().st_mtime)).encode())
@@ -125,19 +124,17 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
 
 
 class ImageLoader(QtCore.QObject):
-    thumbnail_ready = mk_signal3(int, int, QtGui.QIcon)  # type: ignore
+    thumbnail_ready = mk_signal3(int, int, QtGui.QIcon)
 
     def __init__(self) -> None:
         super().__init__()
         self.cache_path = THUMBNAILS
         fail_thumb: QtGui.QPixmap = QtGui.QPixmap(THUMB_SIZE)
         fail_thumb.fill(QtGui.QColor(QtCore.Qt.darkRed))
-        fmt: QtGui.QImage.Format = QtGui.QImage.Format_ARGB32  # type: ignore
-        self.base_thumb: QtGui.QImage = QtGui.QImage(THUMB_SIZE, fmt)
+        self.base_thumb: QtGui.QImage = QtGui.QImage(THUMB_SIZE, QtGui.QImage.Format_ARGB32)
         self.base_thumb.fill(Qt.transparent)
         self.fail_icon = QtGui.QIcon(fail_thumb)
-        mode: QtGui.QIcon.Mode = QtGui.QIcon.Selected  #  type: ignore
-        self.fail_icon.addPixmap(fail_thumb, mode)
+        self.fail_icon.addPixmap(fail_thumb, QtGui.QIcon.Selected)
         self.cached_thumbs: Dict[Path, QtGui.QIcon] = {}
 
     def make_thumb(self, path: Path) -> QtGui.QIcon:
@@ -149,10 +146,9 @@ class ImageLoader(QtCore.QObject):
             int((THUMB_SIZE.height() - thumb.height()) / 2),
             thumb)
         painter.end()
-        pixmap: QtGui.QPixmap = QtGui.QPixmap.fromImage(img)  # type: ignore
+        pixmap = QtGui.QPixmap.fromImage(img)
         icon = QtGui.QIcon(pixmap)
-        mode: QtGui.QIcon.Mode = QtGui.QIcon.Selected  #  type: ignore
-        icon.addPixmap(pixmap, mode)
+        icon.addPixmap(pixmap, QtGui.QIcon.Selected)
         return icon
 
     def load_image(self, batch: int,

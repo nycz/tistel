@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-import json
 import logging
 import sys
 import time
 import typing
-from collections import Counter
 from pathlib import Path
-from typing import List, Optional, Set, cast
+from typing import (Any, Counter, Dict, FrozenSet, List, NamedTuple, Optional,
+                    Set, cast)
 
 from libsyntyche import app
-from libsyntyche.widgets import Signal0, Signal2, mk_signal0, mk_signal2
+from libsyntyche.widgets import (Signal0, Signal2, kill_theming, mk_signal0,
+                                 mk_signal2)
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from .thumb_view import Container as ThumbViewContainer
-from .thumb_view import Mode as ThumbViewMode
+from . import jfti
 from .details_view import DetailsBox
 from .image_loading import Indexer, set_rotation, try_to_get_orientation
 from .image_view import ImagePreview
 from .settings import Settings, SettingsWindow
-from .shared import (CACHE, CSS_FILE, PATH, TAG_COUNT, TAG_NAME, TAG_STATE,
-                     THUMBNAILS, Cache, TagState)
+from .shared import CACHE, CSS_FILE, THUMBNAILS, Cache, ImageData
 from .sidebar import SideBar
-from .tagging_window import TaggingWindow
-from .thumb_view import ProgressBar, StatusBar, ThumbView, ThumbViewItem
+from .tagging_window import TagChanges, TaggingWindow
+from .thumb_view import Container as ThumbViewContainer
+from .thumb_view import Mode as ThumbViewMode
+from .thumb_view import ProgressBar, StatusBar, ThumbView
 
 
 class Divider(QtWidgets.QFrame):
@@ -74,9 +74,9 @@ class MainWindow(app.RootWindow):
         self.tag_count: typing.Counter[str] = Counter()
 
         # Main layout
-        self.layout().setContentsMargins(0, 0, 0, 0)
+        kill_theming(self.layout())
         self.splitter = QtWidgets.QHBoxLayout()
-        self.splitter.setContentsMargins(0, 0, 0, 0)
+        kill_theming(self.splitter)
         self.layout().addLayout(self.splitter)
 
         # Progress bar
@@ -96,7 +96,7 @@ class MainWindow(app.RootWindow):
         # Middle column - thumbnails
         self.thumb_view_container = ThumbViewContainer(self)
         thumb_view_container_layout = QtWidgets.QVBoxLayout(self.thumb_view_container)
-        thumb_view_container_layout.setContentsMargins(0, 0, 0, 0)
+        kill_theming(thumb_view_container_layout)
 
         status_bar = StatusBar(self)
         thumb_view_container_layout.addWidget(status_bar)
@@ -108,8 +108,8 @@ class MainWindow(app.RootWindow):
 
         self.sidebar.tag_list.tag_state_updated.connect(
             self.update_tag_filter)
-        self.thumb_view.currentItemChanged.connect(
-            self.sidebar.tag_list.set_current_thumb)
+        self.thumb_view.image_selected.connect(
+            self.sidebar.tag_list.set_current_image_data)
 
         # Right column - big image
         self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)
@@ -117,17 +117,16 @@ class MainWindow(app.RootWindow):
         self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')
 
-        def load_big_image(current: Optional[ThumbViewItem],
-                           prev: Optional[ThumbViewItem]) -> None:
+        def load_big_image(current: Optional[ImageData]) -> None:
             if current:
-                path = current.get_path()
+                path = current.path
                 orientation = try_to_get_orientation(path)
                 pixmap: Optional[QtGui.QPixmap] = None
                 if orientation:
                     transform = set_rotation(orientation)
                     if not transform.isIdentity():
                         img = QtGui.QImage(str(path)).transformed(transform)
-                        pixmap: QtGui.QPixmap = QtGui.QPixmap.fromImage(img)  # type: ignore
+                        pixmap = QtGui.QPixmap.fromImage(img)
                 if pixmap is None:
                     pixmap = QtGui.QPixmap(str(path))
                 self.image_view.setPixmap(pixmap)
@@ -136,7 +135,7 @@ class MainWindow(app.RootWindow):
                 self.image_view.setPixmap(None)
                 self.image_info_box.set_info(None)
 
-        self.thumb_view.currentItemChanged.connect(load_big_image)
+        self.thumb_view.image_selected.connect(load_big_image)
 
         def change_image(diff: int) -> None:
             total = self.thumb_view.visibleCount()
@@ -220,20 +219,17 @@ class MainWindow(app.RootWindow):
                     if update_names:
                         count = self.thumb_view.count()
                         for item in self.thumb_view.items():
-                            item.setText(item.get_path().name
-                                         if self.config.show_names else '')
+                            item.setText(item.path.name if self.config.show_names else '')
                         self.thumb_view.update_thumb_size()
 
         cast(Signal0, self.sidebar.settings_button.clicked
              ).connect(show_settings_window)
 
-        # Tagging dialog
-        self.tagging_dialog = TaggingWindow(self)
-
         cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+T'), self).activated
              ).connect(self.show_tagging_dialog)
 
         # Reloading
+        self.indexing = True
         self.indexer = Indexer()
         self.indexer_thread = QtCore.QThread()
         cast(Signal0, QtWidgets.QApplication.instance().aboutToQuit  # type: ignore
@@ -246,7 +242,10 @@ class MainWindow(app.RootWindow):
         self.indexer_progressbar = QtWidgets.QProgressDialog()
         self.indexer_progressbar.setWindowModality(Qt.WindowModal)
         self.indexer_progressbar.setMinimumDuration(0)
-        self.indexer.done.connect(lambda _: self.indexer_progressbar.reset())
+
+        def reset_progressbar(*args: Any) -> None:
+            self.indexer_progressbar.reset()
+        self.indexer.done.connect(reset_progressbar)
         self.indexer.set_text.connect(self.indexer_progressbar.setLabelText)
         self.indexer.set_value.connect(self.indexer_progressbar.setValue)
         self.indexer.set_max.connect(self.indexer_progressbar.setMaximum)
@@ -275,17 +274,16 @@ class MainWindow(app.RootWindow):
         )
 
     def show_tagging_dialog(self) -> None:
-        # current_item = self.thumb_view.currentItem()
+        current_index = self.thumb_view.currentIndex()
         selected_items = self.thumb_view.selectedItems()
-        self.tagging_dialog.set_up(self.tag_count, selected_items)
-        result = self.tagging_dialog.exec_()
+        if not selected_items:
+            return
+        result = TaggingWindow.get_tag_changes(selected_items, self.tag_count, self)
         if not result:
             return
-        slider_pos = self.thumb_view.verticalScrollBar()\
-            .sliderPosition()
-        untagged_diff, updated_files, new_tag_count, created_tags =\
-            self.tagging_dialog.tag_images(selected_items)
-        if not updated_files:
+        slider_pos = self.thumb_view.verticalScrollBar().sliderPosition()
+        changes = tag_images(set(self.tag_count.keys()), result, selected_items)
+        if not changes.updated_files:
             return
         # Update the cache
         if not CACHE.exists():
@@ -293,51 +291,19 @@ class MainWindow(app.RootWindow):
             return
         cache = Cache.load()
         cache.updated = time.time()
-        for path, tags in updated_files.items():
+        for path, tags in changes.updated_files.items():
             if path not in cache.images:
                 print('WARNING: img not in cache ??')
                 continue
             cache.images[path].tags = list(tags)
         cache.save()
         # Update the tag list
-        self.tag_count.update(new_tag_count)
-        print(list(self.sidebar.tag_list.items()))
-        untagged_item = self.sidebar.tag_list.takeRow(0)
-        untagged_item.set_tag_count(untagged_item.get_tag_count() + untagged_diff)
-        tag_items_to_delete = []
-        for i, tag_item in enumerate(self.sidebar.tag_list.items()):
-            print(i, tag_item, list(self.sidebar.tag_list.items()))
-            # tag_item = self.sidebar.tag_list.item(i)
-            tag = tag_item.get_tag_name()
-            diff = new_tag_count.get(tag, 0)
-            if diff != 0:
-                new_count = tag_item.get_tag_count() + diff
-                if new_count <= 0:
-                    del self.tag_count[tag]
-                    tag_items_to_delete.append(i)
-                tag_item.set_tag_count(new_count)
-        # Get rid of the items in reverse order
-        # to not mess up the numbers
-        for i in reversed(tag_items_to_delete):
-            self.sidebar.tag_list.takeRow(i)
-        for tag in created_tags:
-            count = new_tag_count.get(tag, 0)
-            if count > 0:
-                self.sidebar.create_tag(tag, count)
-        self.sidebar.tag_list.insertRow(0, untagged_item)
-        self.sidebar.sort_tags()
+        self.tag_count.update(changes.new_tag_count)
+        self.sidebar.tag_list.update_tags(changes.untagged_diff, changes.new_tag_count,
+                                          changes.created_tags)
         self.update_tag_filter()
-        # Go back to the same selected items as before (if visible)
-        # for item in self.thumb_view.selectedItems():
-        #     if (item.isHidden() or item not in selected_items) \
-        #             and item.isSelected():
-        #         item.setSelected(False)
-        # for item in selected_items:
-        #     if not item.isHidden() and not item.isSelected():
-        #         item.setSelected(True)
-        # self.thumb_view.setCurrentItem(current_item)
-        self.thumb_view.verticalScrollBar()\
-            .setSliderPosition(slider_pos)
+        self.thumb_view.setCurrentIndex(current_index)
+        self.thumb_view.verticalScrollBar().setSliderPosition(slider_pos)
 
     def make_event_filter(self) -> None:
         class MainWindowEventFilter(QtCore.QObject):
@@ -346,39 +312,28 @@ class MainWindow(app.RootWindow):
                 if event.type() == QtCore.QEvent.Close:
                     if self.thumb_view.isVisible():
                         self.config.sidebar_width = self.sidebar.width()
-                        self.config.side_splitter = \
-                            self.image_view_splitter.sizes()
+                        self.config.side_splitter = self.image_view_splitter.sizes()
                         self.config.save()
                 return False
         self.close_filter = MainWindowEventFilter()
         self.installEventFilter(self.close_filter)
 
     def index_images(self, skip_thumb_cache: bool = False) -> None:
+        self.indexing = True
         self.start_indexing.emit(self.config.active_paths, skip_thumb_cache)
 
     def load_index(self, skip_thumb_cache: bool) -> None:
+        self.indexing = False
         self.indexer_progressbar.accept()
         result = self.thumb_view.load_index(skip_thumb_cache)
         if result is not None:
-            tags, self.tag_count = result
-            self.sidebar.set_tags(tags)
+            self.tag_count = result
+            self.sidebar.tag_list.set_tags(result)
         self.sidebar.dir_tree.update_paths(self.config.active_paths)
 
     def update_tag_filter(self) -> None:
-        whitelist = set()
-        blacklist = set()
-        untagged_state = TagState.DEFAULT
-        for tag_item in self.sidebar.tag_list.items():
-            state = tag_item.get_tag_state()
-            tag = tag_item.get_tag_name()
-            if tag == '':
-                untagged_state = state
-            elif state == TagState.WHITELISTED:
-                whitelist.add(tag)
-            elif state == TagState.BLACKLISTED:
-                blacklist.add(tag)
-        self.thumb_view.set_tag_filter(untagged_state, whitelist, blacklist)
-        self.sidebar.update_tags(self.thumb_view.get_tag_count())
+        self.thumb_view.set_tag_filter(self.sidebar.tag_list.get_tag_states())
+        self.sidebar.tag_list.update_visible_tags(self.thumb_view.get_tag_count())
         if self.thumb_view.visibleCount():
             self.thumb_view.setCurrentRow(0)
         else:
@@ -386,11 +341,60 @@ class MainWindow(app.RootWindow):
             self.image_view.setPixmap(None)
 
 
+class TagUpdateResult(NamedTuple):
+    untagged_diff: int
+    updated_files: Dict[Path, Set[str]]
+    new_tag_count: Counter[str]
+    created_tags: FrozenSet[str]
+
+
+def tag_images(original_tags: Set[str], changes: TagChanges,
+               images: List[ImageData]) -> TagUpdateResult:
+    # Progress dialog
+    progress_dialog = QtWidgets.QProgressDialog(
+        'Tagging images...', 'Cancel', 0, len(images))
+    progress_dialog.setWindowModality(Qt.WindowModal)
+    progress_dialog.setMinimumDuration(0)
+    # Info about the data we're working with
+    total = len(images)
+    created_tags = changes.tags_to_add - original_tags
+    # Info about the changes
+    new_tag_count: Counter[str] = Counter()
+    untagged_diff = 0
+    updated_files = {}
+    # Tag the files
+    for n, image in enumerate(images):
+        progress_dialog.setLabelText(f'Tagging images... ({n}/{total})')
+        progress_dialog.setValue(n)
+        old_tags = image.tags
+        new_tags = (old_tags | changes.tags_to_add) - changes.tags_to_remove
+        if old_tags != new_tags:
+            added_tags = new_tags - old_tags
+            removed_tags = old_tags - new_tags
+            new_tag_count.update({t: 1 for t in added_tags})
+            new_tag_count.update({t: -1 for t in removed_tags})
+            try:
+                jfti.set_tags(image.path, new_tags)
+            except Exception:
+                print('FAIL', image.path)
+                raise
+            image.tags = new_tags
+            updated_files[image.path] = new_tags
+            if not old_tags and new_tags:
+                untagged_diff -= 1
+            elif old_tags and not new_tags:
+                untagged_diff += 1
+        if progress_dialog.wasCanceled():
+            break
+    progress_dialog.setValue(total)
+    return TagUpdateResult(untagged_diff, updated_files, new_tag_count, created_tags)
+
+
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--path', nargs='+', dest='paths',
-                        metavar='path', type=Path,  # type: ignore
+                        metavar='path', type=Path,
                         help='Use these paths instead of the settings')
     logging.basicConfig()
 

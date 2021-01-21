@@ -1,20 +1,20 @@
-from pathlib import Path
-from typing import Any, Counter, Dict, List, Set, Tuple, cast
+from typing import Counter, FrozenSet, List, NamedTuple, Optional, Tuple, cast
 
 from libsyntyche.widgets import Signal0, Signal1, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
-from . import jfti, shared
-from .shared import ListWidget2
-from .thumb_view import ThumbViewItem
+from . import shared
+from .shared import ImageData, ListWidget2
 
 
 class SortProxyModel(QtCore.QSortFilterProxyModel):
     def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex) -> bool:
+        model = cast(QtGui.QStandardItemModel, self.sourceModel())
+
         def get_data(x: QtCore.QModelIndex) -> Tuple[bool, str, int, int]:
-            item = cast(TaggingListItem, self.sourceModel().itemFromIndex(x))
+            item = cast(TaggingListItem, model.itemFromIndex(x))
             checked = item.checkState() == Qt.Unchecked
             return (checked, item.get_tag_name().lower(), *item.get_tag_count())
         return get_data(left) < get_data(right)
@@ -84,10 +84,16 @@ class TaggingListItem(QtGui.QStandardItem):
         self.setData(tag_name, shared.TAG_NAME)
 
 
+class TagChanges(NamedTuple):
+    tags_to_add: FrozenSet[str]
+    tags_to_remove: FrozenSet[str]
+
+
 class TaggingWindow(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget) -> None:
+    def __init__(self, images: List[ImageData], total_tags: Counter[str],
+                 parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
-        self.original_tags: Counter[str] = Counter()
+        self.original_tags: Counter[str] = total_tags
         self.resize(300, 500)
 
         # Main layout
@@ -103,6 +109,7 @@ class TaggingWindow(QtWidgets.QDialog):
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.completer.setFilterMode(Qt.MatchContains)
         self.tag_input.setCompleter(self.completer)
+        self.completer.setModel(QtCore.QStringListModel(total_tags.keys()))
         input_box.addWidget(self.tag_input)
         self.add_tag_button = QtWidgets.QPushButton('Add tag', self)
         input_box.addWidget(self.add_tag_button)
@@ -112,15 +119,27 @@ class TaggingWindow(QtWidgets.QDialog):
             self.add_tag_button.setEnabled(bool(text.strip()))
 
         cast(Signal1[str], self.tag_input.textChanged).connect(update_add_button)
-        cast(Signal0, self.tag_input.returnPressed).connect(self.add_tag)
-        cast(Signal0, self.add_tag_button.clicked).connect(self.add_tag)
+        cast(Signal0, self.tag_input.returnPressed).connect(self._add_tag)
+        cast(Signal0, self.add_tag_button.clicked).connect(self._add_tag)
 
         # Tag list
         layout.addWidget(QtWidgets.QLabel('All tags'))
         self._sort_model = SortProxyModel()
         self.tag_list: ListWidget2[TaggingListItem] = ListWidget2(self, self._sort_model)
-        # self.tag_list.sort_func = sort_tag_list_by_num_and_alpha
+        tag_counter: Counter[str] = Counter()
+        for img in images:
+            tag_counter.update(img.tags)
+        for tag, total in total_tags.items():
+            count = tag_counter.get(tag, 0)
+            item = TaggingListItem(f'{tag} ({count}/{total})')
+            item.set_tag_name(tag)
+            item.set_tag_count(count, total)
+            item.setCheckState(Qt.Checked if count == len(images)
+                               else Qt.Unchecked if count == 0
+                               else Qt.PartiallyChecked)
+            self.tag_list.addItem(item)
         layout.addWidget(self.tag_list)
+        self.tag_input.setFocus()
 
         # def just_sort(x: QtWidgets.QListWidgetItem) -> None:
         #     self.tag_list.sortItems()
@@ -129,7 +148,7 @@ class TaggingWindow(QtWidgets.QDialog):
         # Buttons
         button_box = QDialogButtonBox(self)
         button_box.addButton(QDialogButtonBox.Cancel)
-        self.accept_button = button_box.addButton('Apply to images',
+        self.accept_button = button_box.addButton(f'Apply to {len(images)} images',
                                                   QDialogButtonBox.AcceptRole)
         cast(Signal0, button_box.accepted).connect(self.accept)
         cast(Signal0, button_box.rejected).connect(self.reject)
@@ -142,21 +161,7 @@ class TaggingWindow(QtWidgets.QDialog):
         else:
             super().keyPressEvent(event)
 
-    def get_tags_to_add(self) -> Set[str]:
-        out = set()
-        for item in self.tag_list.items():
-            if item.checkState() == Qt.Checked:
-                out.add(item.get_tag_name())
-        return out
-
-    def get_tags_to_remove(self) -> Set[str]:
-        out = set()
-        for item in self.tag_list.items():
-            if item.checkState() == Qt.Unchecked:
-                out.add(item.get_tag_name())
-        return out
-
-    def add_tag(self) -> None:
+    def _add_tag(self) -> None:
         if not self.add_tag_button.isEnabled():
             return
         tag = self.tag_input.text().strip()
@@ -172,76 +177,23 @@ class TaggingWindow(QtWidgets.QDialog):
                 item.setCheckState(Qt.Checked)
                 self.tag_list.insertRow(0, item)
             self.tag_input.clear()
+            self.tag_list.model().sort(0)
             # self.tag_list.sortItems()
 
-    def set_up(self, tags: Counter[str], images: List[ThumbViewItem]) -> None:
-        self.original_tags = tags
-        self.accept_button.setText(f'Apply to {len(images)} images')
-        self.tag_input.clear()
-        self.tag_list.clear()
-        tag_counter: Counter[str] = Counter()
-        for img in images:
-            img_tags = img.get_tags()
-            tag_counter.update(img_tags)
-        model = QtCore.QStringListModel(tags.keys())
-        self.completer.setModel(model)
-        for tag, total in tags.items():
-            count = tag_counter.get(tag, 0)
-            item = TaggingListItem(f'{tag} ({count}/{total})')
-            item.set_tag_name(tag)
-            item.set_tag_count(count, total)
-            if count == len(images):
-                item.setCheckState(Qt.Checked)
-            elif count == 0:
-                item.setCheckState(Qt.Unchecked)
-            else:
-                item.setCheckState(Qt.PartiallyChecked)
-            self.tag_list.addItem(item)
-        # self.tag_list.sortItems()
-        self.tag_input.setFocus()
-
-    def tag_images(self, items: List[ThumbViewItem]
-                   ) -> Tuple[int, Dict[Path, Set[str]],
-                              Counter[str], Set[str]]:
-        # Progress dialog
-        progress_dialog = QtWidgets.QProgressDialog(
-            'Tagging images...', 'Cancel', 0, len(items))
-        progress_dialog.setWindowModality(Qt.WindowModal)
-        progress_dialog.setMinimumDuration(0)
-        # Info about the data we're working with
-        total = len(items)
-        tags_to_add = self.get_tags_to_add()
-        tags_to_remove = self.get_tags_to_remove()
-        created_tags = tags_to_add - set(self.original_tags.keys())
-        # Info about the changes
-        new_tag_count: Counter[str] = Counter()
-        untagged_diff = 0
-        updated_files = {}
-        # Tag the files
-        for n, item in enumerate(items):
-            progress_dialog.setLabelText(f'Tagging images... '
-                                         f'({n}/{total})')
-            progress_dialog.setValue(n)
-            old_tags = item.get_tags()
-            new_tags = (old_tags | tags_to_add) - tags_to_remove
-            if old_tags != new_tags:
-                added_tags = new_tags - old_tags
-                removed_tags = old_tags - new_tags
-                new_tag_count.update({t: 1 for t in added_tags})
-                new_tag_count.update({t: -1 for t in removed_tags})
-                path = item.get_path()
-                try:
-                    jfti.set_tags(path, new_tags)
-                except Exception:
-                    print('FAIL', path)
-                    raise
-                item.set_tags(new_tags)
-                updated_files[item.get_path()] = new_tags
-                if not old_tags and new_tags:
-                    untagged_diff -= 1
-                elif old_tags and not new_tags:
-                    untagged_diff += 1
-            if progress_dialog.wasCanceled():
-                break
-        progress_dialog.setValue(total)
-        return untagged_diff, updated_files, new_tag_count, created_tags
+    @classmethod
+    def get_tag_changes(cls, images: List[ImageData], total_tags: Counter[str],
+                        parent: QtWidgets.QWidget) -> Optional[TagChanges]:
+        dialog = cls(images, total_tags, parent)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            tags_to_add = frozenset(item.get_tag_name()
+                                    for item in dialog.tag_list.items()
+                                    if item.checkState() == Qt.Checked)
+            tags_to_remove = frozenset(item.get_tag_name()
+                                       for item in dialog.tag_list.items()
+                                       if item.checkState() == Qt.Unchecked)
+            return TagChanges(
+                tags_to_add=tags_to_add,
+                tags_to_remove=tags_to_remove,
+            )
+        else:
+            return None

@@ -74,31 +74,31 @@
   background: blue;
 }
 
-#clear_button, #sort_button {
+#clear_button, #sort_alpha_button, #sort_count_button {
   padding: 5px;
   margin: 4px;
 }
 
-#sort_button {
+#sort_alpha_button, #sort_count_button {
   margin-left: 0;
   border: 2px solid #777;
   background: #444;
   color: #999;
 }
 
-#sort_button:hover {
+#sort_alpha_button:hover, #sort_count_button:hover {
   border: 2px solid #999;
   background: #666;
   color: #bbb;
 }
 
-#sort_button:checked {
+#sort_alpha_button:checked, #sort_count_button:checked {
   border: 2px solid #9bb;
   background: #355;
   color: white;
 }
 
-#sort_button:hover:checked {
+#sort_alpha_button:hover:checked, #sort_count_button:hover:checked {
   border: 2px solid #bdd;
   background: #577;
 }

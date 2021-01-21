@@ -1,27 +1,22 @@
 import enum
-import json
 from pathlib import Path
-from typing import Any, Counter, List, Optional, Set, Tuple, cast
+from typing import Counter, FrozenSet, List, Optional, Set, Tuple, cast
 
-from libsyntyche.widgets import Signal0, Signal2, mk_signal1, mk_signal2
+from libsyntyche.widgets import (Signal0, Signal1, Signal2, mk_signal1,
+                                 mk_signal2)
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt, pyqtProperty  # type: ignore
 
 from . import jfti, shared
 from .image_loading import THUMB_SIZE, ImageLoader
 from .settings import Settings
-from .shared import (CACHE, Cache, ListWidget2, TagState)
+from .shared import CACHE, Cache, ImageData, ListWidget2, TagState, TagStates
 
 
 class Mode(enum.Enum):
     normal = enum.auto()
     select = enum.auto()
 
-
-mode_colors = {
-    Mode.normal: '#334',
-    Mode.select: '#364',
-}
 
 mode_texts = {
     Mode.normal: 'NORMAL',
@@ -99,9 +94,6 @@ class StatusBar(QtWidgets.QFrame):
 
         self.sort_menu_button.clicked.connect(show_menu)
 
-    def update_max_column_count(self, max_cols: int) -> None:
-        self.column_count_label.setRange(1, max_cols)
-
     def update_column_count(self, cols: int) -> None:
         self.column_count_label.setValue(cols)
 
@@ -129,13 +121,13 @@ class ProgressBar(QtWidgets.QProgressBar):
 class FilterProxyModel(QtCore.QSortFilterProxyModel):
     def __init__(self) -> None:
         super().__init__()
-        self.tag_whitelist: Set[str] = set()
-        self.tag_blacklist: Set[str] = set()
+        self.tag_whitelist: FrozenSet[str] = frozenset()
+        self.tag_blacklist: FrozenSet[str] = frozenset()
         self.untagged_state: TagState = TagState.DEFAULT
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
         source_model = cast(QtGui.QStandardItemModel, self.sourceModel())
-        tags = cast(ThumbViewItem, source_model.item(source_row, 0)).get_tags()
+        tags = cast(ThumbViewItem, source_model.item(source_row, 0)).tags
         if (self.untagged_state == TagState.WHITELISTED and tags) \
                 or (self.untagged_state == TagState.BLACKLISTED and not tags) \
                 or (self.tag_whitelist and not self.tag_whitelist.issubset(tags)) \
@@ -143,61 +135,75 @@ class FilterProxyModel(QtCore.QSortFilterProxyModel):
             return False
         return True
 
-    def set_tag_filter(self, untagged_state: TagState,
-                       whitelist: Set[str], blacklist: Set[str]) -> None:
-        self.tag_whitelist = whitelist
-        self.tag_blacklist = blacklist
-        self.untagged_state = untagged_state
+    def set_tag_filter(self, states: TagStates) -> None:
+        self.tag_whitelist = states.whitelist
+        self.tag_blacklist = states.blacklist
+        self.untagged_state = states.untagged_state
         self.invalidateFilter()
 
 
 class ThumbViewItem(QtGui.QStandardItem):
-    def get_dimensions(self) -> Tuple[int, int]:
+    @property
+    def dimensions(self) -> Tuple[int, int]:
         return cast(Tuple[int, int], self.data(shared.DIMENSIONS))
 
-    def get_file_format(self) -> str:
+    @dimensions.setter
+    def dimensions(self, dimensions: Tuple[int, int]) -> None:
+        self.setData(dimensions, shared.DIMENSIONS)
+
+    @property
+    def file_format(self) -> str:
         return cast(str, self.data(shared.FILE_FORMAT))
 
-    def get_file_name(self) -> str:
-        return cast(str, self.data(shared.FILE_NAME))
-
-    def get_file_size(self) -> int:
-        return cast(int, self.data(shared.FILE_SIZE))
-
-    def get_path(self) -> Path:
-        return cast(Path, self.data(shared.PATH))
-
-    def get_path_string(self) -> str:
-        return cast(str, self.data(shared.PATH_STRING))
-
-    def get_tags(self) -> Set[str]:
-        return cast(Set[str], self.data(shared.TAGS))
-
-    def set_dimensions(self, width: int, height: int) -> None:
-        self.setData((width, height), shared.DIMENSIONS)
-
-    def set_file_format(self, file_format: str) -> None:
+    @file_format.setter
+    def file_format(self, file_format: str) -> None:
         self.setData(file_format, shared.FILE_FORMAT)
 
-    def set_file_name(self, file_name: str) -> None:
+    @property
+    def file_name(self) -> str:
+        return cast(str, self.data(shared.FILE_NAME))
+
+    @file_name.setter
+    def file_name(self, file_name: str) -> None:
         self.setData(file_name, shared.FILE_NAME)
 
-    def set_file_size(self, file_size: int) -> None:
+    @property
+    def file_size(self) -> int:
+        return cast(int, self.data(shared.FILE_SIZE))
+
+    @file_size.setter
+    def file_size(self, file_size: int) -> None:
         self.setData(file_size, shared.FILE_SIZE)
 
-    def set_path(self, path: Path) -> None:
+    @property
+    def path(self) -> Path:
+        return cast(Path, self.data(shared.PATH))
+
+    @path.setter
+    def path(self, path: Path) -> None:
         self.setData(path, shared.PATH)
 
-    def set_path_string(self, path_string: str) -> None:
+    @property
+    def path_string(self) -> str:
+        return cast(str, self.data(shared.PATH_STRING))
+
+    @path_string.setter
+    def path_string(self, path_string: str) -> None:
         self.setData(path_string, shared.PATH_STRING)
 
-    def set_tags(self, tags: Set[str]) -> None:
+    @property
+    def tags(self) -> Set[str]:
+        return cast(Set[str], self.data(shared.TAGS))
+
+    @tags.setter
+    def tags(self, tags: Set[str]) -> None:
         self.setData(tags, shared.TAGS)
 
 
 class ThumbView(ListWidget2[ThumbViewItem]):
     image_queued: Signal2[int, List[Tuple[int, bool, Path]]] = mk_signal2(int, list)
     mode_changed = mk_signal1(Mode)
+    image_selected = cast(Signal1[Optional[ImageData]], mk_signal1(object))
 
     def __init__(self, progress: ProgressBar, status_bar: StatusBar,
                  config: Settings, parent: QtWidgets.QWidget) -> None:
@@ -209,7 +215,6 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         self.status_bar = status_bar
         self.status_bar.column_count_label.setValue(self.config.thumb_view_columns)
         self.batch = 0
-        self.thumbnails_done = 0
         self.scroll_ratio: Optional[float] = None
         self.selected_indexes: List[QtCore.QPersistentModelIndex] = []
 
@@ -225,8 +230,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         default_thumb = QtGui.QPixmap(THUMB_SIZE)
         default_thumb.fill(QtGui.QColor(QtCore.Qt.gray))
         self.default_icon = QtGui.QIcon(default_thumb)
-        icon_mode: QtGui.QIcon.Mode = QtGui.QIcon.Selected  # type: ignore
-        self.default_icon.addPixmap(default_thumb, icon_mode)
+        self.default_icon.addPixmap(default_thumb, QtGui.QIcon.Selected)
 
         self.thumb_loader_thread = QtCore.QThread()
         cast(Signal0, QtWidgets.QApplication.instance().aboutToQuit  # type: ignore
@@ -272,12 +276,17 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         self.status_bar.sort_order_group.triggered.connect(update_sorting)
         update_sorting(self.status_bar.sort_by_path)
 
-    def set_tag_filter(self, untagged_state: TagState,
-                       whitelist: Set[str], blacklist: Set[str]) -> None:
+        def emit_image_selected(current: Optional[ThumbViewItem],
+                                previous: Optional[ThumbViewItem]) -> None:
+            self.image_selected.emit(current)
+
+        self.currentItemChanged.connect(emit_image_selected)
+
+    def set_tag_filter(self, states: TagStates) -> None:
         # Disconnect the selection changed signal to stop it from overwriting
         # the old data when filtering
         self.selectionModel().selectionChanged.disconnect(self.update_selection_info)
-        self._filter_model.set_tag_filter(untagged_state, whitelist, blacklist)
+        self._filter_model.set_tag_filter(states)
         for sel_index in self.selected_indexes:
             index = self._filter_model.mapFromSource(QtCore.QModelIndex(sel_index))
             if index.isValid():
@@ -317,7 +326,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         untagged = 0
         tag_count: Counter[str] = Counter()
         for item in self.visibleItems():
-            tags = item.get_tags()
+            tags = item.tags
             if not tags:
                 untagged += 1
             else:
@@ -325,10 +334,11 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         tag_count[''] = untagged
         return tag_count
 
-    def selectedItems(self) -> List[ThumbViewItem]:
-        out: List[ThumbViewItem] = []
+    def selectedItems(self) -> List[ImageData]:
+        out: List[ImageData] = []
         for p_index in self.selected_indexes:
-            out.append(self._model.itemFromIndex(QtCore.QModelIndex(p_index)))
+            out.append(cast(ThumbViewItem,
+                            self._model.itemFromIndex(QtCore.QModelIndex(p_index))))
         return out
 
     def set_mode(self, mode: Mode, force: bool = False) -> None:
@@ -416,8 +426,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             painter.setPen(pen)
             painter.drawRect(rect)
 
-    def load_index(self, skip_thumb_cache: bool
-                   ) -> Optional[Tuple[List[Tuple[str, int]], Counter[str]]]:
+    def load_index(self, skip_thumb_cache: bool) -> Optional[Counter[str]]:
         if not CACHE.exists():
             return None
         self.clear()
@@ -442,20 +451,13 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             item = ThumbViewItem(self.default_icon, item_text)
             item.setEditable(False)
             self.appendRow(item)
-            item.set_path(path)
-            item.set_path_string(str(path))
-            item.set_file_name(path.name)
-            item.set_file_size(data.size)
-            item.set_tags(set(data.tags))
-            item.set_dimensions(data.w, data.h)
-            item.set_file_format(jfti.identify_image_format(path) or '')
-            # item.setData(path, PATH)
-            # item.setData(str(path), PATH_STRING)
-            # item.setData(path.name, FILENAME)
-            # item.setData(data['size'], FILESIZE)
-            # item.setData(set(data['tags']), TAGS)
-            # item.setData((data['w'], data['h']), DIMENSIONS)
-            # item.setData(jfti.identify_image_format(path), FILEFORMAT)
+            item.path = path
+            item.path_string = str(path)
+            item.file_name = path.name
+            item.file_size = data.size
+            item.tags = set(data.tags)
+            item.dimensions = (data.w, data.h)
+            item.file_format = jfti.identify_image_format(path) or ''
             imgs.append((n, skip_thumb_cache, path))
             n += 1
             tag_count.update(data.tags)
@@ -464,9 +466,9 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         if not self.selectionModel().currentIndex().isValid():
             self.setCurrentRow(0)
         self.image_queued.emit(self.batch, imgs)
-        tags = [('', untagged)]
-        for tag, count in tag_count.most_common():
-            tags.append((tag, count))
+        # tags = [('', untagged)]
+        # for tag, count in tag_count.most_common():
+        #     tags.append((tag, count))
         total = self.count()
         if total > 0:
             self.progress.setMaximum(total)
@@ -475,7 +477,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         else:
             self.progress.hide()
         self.update_selection_info()
-        return tags, tag_count
+        return tag_count
 
     def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
         if batch != self.batch:

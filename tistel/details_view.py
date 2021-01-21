@@ -1,11 +1,10 @@
 from typing import Optional
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
 
-from . import jfti, shared
-from .shared import (IconWidget, clear_layout, human_filesize)
-from .thumb_view import ThumbViewItem
+from . import jfti
+from .shared import IconWidget, ImageData, clear_layout, human_filesize
 
 
 class DetailsBox(QtWidgets.QScrollArea):
@@ -35,29 +34,27 @@ class DetailsBox(QtWidgets.QScrollArea):
         layout.addWidget(self.fileformat)
         layout.addStretch()
 
-    def set_info(self, item: Optional[ThumbViewItem]) -> None:
-        if item is None:
+    def set_info(self, image: Optional[ImageData]) -> None:
+        if image is None:
             self.directory.clear()
             self.filename.clear()
             self.filesize.clear()
             self.dimensions.clear()
             clear_layout(self.tag_box)
         else:
-            path = item.get_path()
+            path = image.path
             self.directory.setText(f'<b>Directory:</b> {path.parent}')
             self.filename.setText(f'<b>Name:</b> {path.name}')
-            fmt = item.get_file_format()
+            fmt = image.file_format
             if jfti.image_format_mismatch(path, fmt):
                 self.fileformat.setText(f'<b>Mismatching format:</b> {fmt}')
             else:
                 self.fileformat.clear()
-            width, height = item.get_dimensions()
+            width, height = image.dimensions
             self.dimensions.setText(f'<b>Dimensions:</b> {width} x {height}')
-            size = item.get_file_size()
-            self.filesize.setText(f'<b>Size:</b> {human_filesize(size)}')
-            tags = item.get_tags()
+            self.filesize.setText(f'<b>Size:</b> {human_filesize(image.file_size)}')
             clear_layout(self.tag_box)
-            for n, tag in enumerate(tags):
+            for n, tag in enumerate(image.tags):
                 tag_icon = IconWidget('tag', 16, self)
                 tag_icon.setObjectName('tag_icon')
                 self.tag_box.addWidget(tag_icon, n, 0)

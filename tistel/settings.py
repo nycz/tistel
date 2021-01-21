@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import List, Optional, Set, Type, TypeVar, cast
+from typing import List, Optional, Set, TypeVar, cast
 
 from libsyntyche.widgets import Signal0, Signal1
 from PyQt5 import QtCore, QtWidgets

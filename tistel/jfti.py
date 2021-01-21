@@ -53,13 +53,12 @@ def dimensions(fname: Path) -> Tuple[int, int]:
                                        stderr=subprocess.PIPE,
                                        encoding='utf-8')
     except subprocess.CalledProcessError as e:
-        return (-1, -1)
-    else:
-        size_lines = [(int(m[1]), int(m[2])) for line in text.splitlines()
-                      if (m := re.fullmatch(r'Image size\s*:\s*(\d+)\s*x\s*(\d+)\s*', line))]
-        if size_lines:
-            return size_lines[0]
-        return (-1, -1)
+        text = e.stdout
+    size_lines = [(int(m[1]), int(m[2])) for line in text.splitlines()
+                  if (m := re.fullmatch(r'Image size\s*:\s*(\d+)\s*x\s*(\d+)\s*', line))]
+    if size_lines:
+        return size_lines[0]
+    return (-1, -1)
 
 
 def read_tags(fname: Path) -> Iterable[str]:
@@ -80,7 +79,7 @@ def read_tags(fname: Path) -> Iterable[str]:
         )
 
 
-def set_tags(fname: Path, tags: Set[str], safe: bool = True) -> None:
+def set_tags(fname: Path, tags: Set[str]) -> None:
     tt = 'Xmp.dc.subject'
     args = ['exiv2', '-M', f'del {tt}']
     for tag in tags:

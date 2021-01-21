@@ -1,16 +1,16 @@
 from __future__ import annotations
+
 import enum
 import itertools
 import json
 from dataclasses import dataclass
-from pathlib import PosixPath, Path
-from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, TypeVar, Union, cast
+from pathlib import Path
+from typing import (Any, Dict, FrozenSet, Generic, Iterable, List, NamedTuple,
+                    Optional, Protocol, Set, Tuple, TypeVar, Union, cast)
 
 from libsyntyche.widgets import Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets
 from PyQt5.QtCore import Qt
-
-# mypy: disallow-any-expr
 
 _data_ids = itertools.count(start=Qt.UserRole)
 
@@ -22,16 +22,14 @@ TAG_STATE = next(_data_ids)
 TAG_NAME = next(_data_ids)
 TAG_COUNT = next(_data_ids)
 VISIBLE_TAG_COUNT = next(_data_ids)
-DEFAULT_COLOR = next(_data_ids)
 HOVERING = next(_data_ids)
 FILE_FORMAT = next(_data_ids)
 PATH_STRING = next(_data_ids)
 FILE_NAME = next(_data_ids)
 
-_home = Path.home()  # type: ignore
-CONFIG = _home / '.config' / 'tistel' / 'config.json'
-CACHE = _home / '.cache' / 'tistel' / 'cache.json'
-THUMBNAILS = _home / '.thumbnails' / 'normal'
+CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
+CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
+THUMBNAILS = Path.home() / '.thumbnails' / 'normal'
 DATA_PATH = Path(__file__).resolve().parent / 'data'
 CSS_FILE = DATA_PATH / 'qt.css'
 
@@ -40,6 +38,70 @@ class TagState(enum.Enum):
     WHITELISTED = enum.auto()
     BLACKLISTED = enum.auto()
     DEFAULT = enum.auto()
+
+
+class TagStates(NamedTuple):
+    whitelist: FrozenSet[str]
+    blacklist: FrozenSet[str]
+    untagged_state: TagState
+
+
+class ImageData(Protocol):
+    @property
+    def dimensions(self) -> Tuple[int, int]:
+        ...
+
+    @dimensions.setter
+    def dimensions(self, dimensions: Tuple[int, int]) -> None:
+        ...
+
+    @property
+    def file_format(self) -> str:
+        ...
+
+    @file_format.setter
+    def file_format(self, file_format: str) -> None:
+        ...
+
+    @property
+    def file_name(self) -> str:
+        ...
+
+    @file_name.setter
+    def file_name(self, file_name: str) -> None:
+        ...
+
+    @property
+    def file_size(self) -> int:
+        ...
+
+    @file_size.setter
+    def file_size(self, file_size: int) -> None:
+        ...
+
+    @property
+    def path(self) -> Path:
+        ...
+
+    @path.setter
+    def path(self, path: Path) -> None:
+        ...
+
+    @property
+    def path_string(self) -> str:
+        ...
+
+    @path_string.setter
+    def path_string(self, path_string: str) -> None:
+        ...
+
+    @property
+    def tags(self) -> Set[str]:
+        ...
+
+    @tags.setter
+    def tags(self, tags: Set[str]) -> None:
+        ...
 
 
 @dataclass
@@ -65,14 +127,14 @@ class Cache:
             updated=cast(float, data['updated']),
             images={
                 Path(k): CachedImageData(
-                    tags=v['tags'],
-                    size=v['size'],
-                    w=v['w'],
-                    h=v['h'],
-                    mtime=v['mtime'],
-                    ctime=v['ctime'],
+                    tags=cast(List[str], v['tags']),
+                    size=cast(int, v['size']),
+                    w=cast(int, v['w']),
+                    h=cast(int, v['h']),
+                    mtime=cast(float, v['mtime']),
+                    ctime=cast(float, v['ctime']),
                 )  # **cast(Dict[str, Union[List[str], int, float]], v))
-                for k, v in data['images'].items()
+                for k, v in cast(Dict[str, Any], data['images']).items()
             }
         )
 
@@ -96,6 +158,7 @@ class Cache:
 
 
 T = TypeVar('T', bound=QtGui.QStandardItem)
+
 
 class ListWidget2(QtWidgets.QListView, Generic[T]):
     currentItemChanged: Signal2[Optional[T], Optional[T]] = \
@@ -154,6 +217,13 @@ class ListWidget2(QtWidgets.QListView, Generic[T]):
     def setCurrentRow(self, row: int) -> None:
         self.selectionModel().setCurrentIndex(self.model().index(row, 0),
                                               QtCore.QItemSelectionModel.NoUpdate)
+
+    def currentIndex(self) -> QtCore.QModelIndex:
+        return self.selectionModel().currentIndex()
+
+    def setCurrentIndex(self, index: QtCore.QModelIndex) -> None:
+        if index.isValid():
+            return self.selectionModel().setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
 
     def items(self) -> Iterable[T]:
         for i in range(self._model.rowCount()):
