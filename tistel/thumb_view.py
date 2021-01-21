@@ -42,7 +42,6 @@ class Container(QtWidgets.QWidget):
 
 
 class StatusBar(QtWidgets.QFrame):
-
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         self.setObjectName('thumb_view_status_bar')
@@ -65,34 +64,6 @@ class StatusBar(QtWidgets.QFrame):
         self.column_count_label.setObjectName('thumb_view_column_count')
         layout.addWidget(self.column_count_label)
         layout.addStretch()
-        # Sort options
-        self.sort_menu_button = QtWidgets.QPushButton('Sort...', self)
-        self.sort_menu_button.setObjectName('thumb_view_sort_button')
-        self.sort_menu = QtWidgets.QMenu(self)
-        self.sort_menu.setObjectName('thumb_view_sort_menu')
-
-        def mkopt(name: str, group: QtWidgets.QActionGroup, checked: bool = False
-                  ) -> QtWidgets.QAction:
-            opt = self.sort_menu.addAction(name)
-            opt.setCheckable(True)
-            opt.setChecked(checked)
-            opt.setActionGroup(group)
-            return opt
-        self.sort_key_group = QtWidgets.QActionGroup(self)
-        self.sort_by_path = mkopt('Path', self.sort_key_group, checked=True)
-        self.sort_by_name = mkopt('File name', self.sort_key_group)
-        self.sort_by_size = mkopt('File size', self.sort_key_group)
-        self.sort_menu.addSeparator()
-        self.sort_order_group = QtWidgets.QActionGroup(self)
-        self.sort_ascending = mkopt('Ascending', self.sort_order_group, checked=True)
-        self.sort_descending = mkopt('Descending', self.sort_order_group)
-        layout.addWidget(self.sort_menu_button)
-
-        def show_menu() -> None:
-            self.sort_menu.popup(self.sort_menu_button.mapToGlobal(
-                self.sort_menu_button.rect().bottomLeft()))
-
-        self.sort_menu_button.clicked.connect(show_menu)
 
     def update_column_count(self, cols: int) -> None:
         self.column_count_label.setValue(cols)
@@ -258,23 +229,13 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         self.selectionModel().selectionChanged.connect(self.update_selection_info)
         self.update_selection_info()
 
-        def update_sorting(action: QtWidgets.QAction) -> None:
-            order = self._filter_model.sortOrder()
-            if action == self.status_bar.sort_by_path:
-                self._filter_model.setSortRole(shared.PATH_STRING)
-            elif action == self.status_bar.sort_by_name:
-                self._filter_model.setSortRole(shared.FILE_NAME)
-            elif action == self.status_bar.sort_by_size:
-                self._filter_model.setSortRole(shared.FILE_SIZE)
-            elif action == self.status_bar.sort_ascending:
-                order = Qt.AscendingOrder
-            elif action == self.status_bar.sort_descending:
-                order = Qt.DescendingOrder
-            self._filter_model.sort(0, order)
-
-        self.status_bar.sort_key_group.triggered.connect(update_sorting)
-        self.status_bar.sort_order_group.triggered.connect(update_sorting)
-        update_sorting(self.status_bar.sort_by_path)
+        self.status_bar.layout().addWidget(shared.make_sort_menu(
+            self.status_bar,
+            self._filter_model,
+            {'Path': shared.PATH_STRING,
+             'File name': shared.FILE_NAME,
+             'File size': shared.FILE_SIZE},
+        ))
 
         def emit_image_selected(current: Optional[ThumbViewItem],
                                 previous: Optional[ThumbViewItem]) -> None:

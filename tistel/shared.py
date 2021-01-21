@@ -279,6 +279,53 @@ def make_svg_icon(name: str, resolution: int,
     return icon
 
 
+def make_sort_menu(parent: QtWidgets.QWidget,
+                   sort_model: QtCore.QSortFilterProxyModel,
+                   titles_and_sort_roles: Dict[str, int],
+                   ) -> QtWidgets.QPushButton:
+    menu = QtWidgets.QMenu(parent)
+
+    def mkopt(name: str, group: QtWidgets.QActionGroup) -> QtWidgets.QAction:
+        opt = menu.addAction(name)
+        opt.setCheckable(True)
+        opt.setActionGroup(group)
+        return opt
+
+    sort_key_group = QtWidgets.QActionGroup(parent)
+    sort_key_actions = [mkopt(title, sort_key_group)
+                        for title in titles_and_sort_roles.keys()]
+    sort_key_actions[0].setChecked(True)
+    menu.addSeparator()
+    sort_order_group = QtWidgets.QActionGroup(parent)
+    sort_ascending = mkopt('Ascending', sort_order_group)
+    sort_ascending.setChecked(True)
+    sort_descending = mkopt('Descending', sort_order_group)
+
+    def update_sorting(action: QtWidgets.QAction) -> None:
+        order = sort_model.sortOrder()
+        for key_action, sort_role in zip(sort_key_actions, titles_and_sort_roles.values()):
+            if action == key_action:
+                sort_model.setSortRole(sort_role)
+                break
+        else:
+            if action == sort_ascending:
+                order = Qt.AscendingOrder
+            elif action == sort_descending:
+                order = Qt.DescendingOrder
+        sort_model.sort(0, order)
+
+    sort_key_group.triggered.connect(update_sorting)
+    sort_order_group.triggered.connect(update_sorting)
+    update_sorting(sort_key_actions[0])
+
+    button = QtWidgets.QPushButton('Sort...', parent)
+    def show_menu() -> None:
+        menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
+
+    button.clicked.connect(show_menu)
+    return button
+
+
 def clear_layout(layout: QtWidgets.QLayout) -> None:
     while layout.count() > 0:
         item = layout.takeAt(0)
