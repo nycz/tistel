@@ -1,4 +1,5 @@
-from typing import Counter, FrozenSet, List, NamedTuple, Optional, Tuple, cast
+from typing import (Any, Counter, FrozenSet, List, NamedTuple, Optional, Tuple,
+                    cast)
 
 from libsyntyche.widgets import Signal0, Signal1, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -13,10 +14,12 @@ class SortProxyModel(QtCore.QSortFilterProxyModel):
     def lessThan(self, left: QtCore.QModelIndex, right: QtCore.QModelIndex) -> bool:
         model = cast(QtGui.QStandardItemModel, self.sourceModel())
 
-        def get_data(x: QtCore.QModelIndex) -> Tuple[bool, str, int, int]:
+        def get_data(x: QtCore.QModelIndex) -> Tuple[bool, Any]:
             item = cast(TaggingListItem, model.itemFromIndex(x))
             checked = item.checkState() == Qt.Unchecked
-            return (checked, item.get_tag_name().lower(), *item.get_tag_count())
+            if self.sortOrder() == Qt.DescendingOrder:
+                checked = not checked
+            return (checked, x.data(self.sortRole()))
         return get_data(left) < get_data(right)
 
 
@@ -71,17 +74,29 @@ class TaggingListItem(QtGui.QStandardItem):
         self.setCheckable(True)
         self.setEditable(False)
 
-    def get_tag_count(self) -> Tuple[int, int]:
-        return cast(Tuple[int, int], self.data(shared.TAG_COUNT))
+    @property
+    def tag_count(self) -> int:
+        return cast(int, self.data(shared.TAG_COUNT))
 
-    def get_tag_name(self) -> str:
+    @tag_count.setter
+    def tag_count(self, total_count: int) -> None:
+        self.setData(total_count, shared.TAG_COUNT)
+
+    @property
+    def tag_name(self) -> str:
         return cast(str, self.data(shared.TAG_NAME))
 
-    def set_tag_count(self, count: int, total_count: int) -> None:
-        self.setData((count, total_count), shared.TAG_COUNT)
-
-    def set_tag_name(self, tag_name: str) -> None:
+    @tag_name.setter
+    def tag_name(self, tag_name: str) -> None:
         self.setData(tag_name, shared.TAG_NAME)
+
+    @property
+    def visible_tag_count(self) -> int:
+        return cast(int, self.data(shared.VISIBLE_TAG_COUNT))
+
+    @visible_tag_count.setter
+    def visible_tag_count(self, visible_count: int) -> None:
+        self.setData(visible_count, shared.VISIBLE_TAG_COUNT)
 
 
 class TagChanges(NamedTuple):
@@ -132,8 +147,9 @@ class TaggingWindow(QtWidgets.QDialog):
         for tag, total in total_tags.items():
             count = tag_counter.get(tag, 0)
             item = TaggingListItem(f'{tag} ({count}/{total})')
-            item.set_tag_name(tag)
-            item.set_tag_count(count, total)
+            item.tag_name = tag
+            item.tag_count = total
+            item.visible_tag_count = count
             item.setCheckState(Qt.Checked if count == len(images)
                                else Qt.Unchecked if count == 0
                                else Qt.PartiallyChecked)
@@ -141,9 +157,14 @@ class TaggingWindow(QtWidgets.QDialog):
         layout.addWidget(self.tag_list)
         self.tag_input.setFocus()
 
-        # def just_sort(x: QtWidgets.QListWidgetItem) -> None:
-        #     self.tag_list.sortItems()
-        # cast(Signal1[QtCore.Q], self.tag_list.itemChanged).connect(just_sort)
+        # Sorting
+        self.sort_button = shared.make_sort_menu(
+            self, self._sort_model,
+            {'Name': shared.TAG_NAME,
+             'Selected count': shared.VISIBLE_TAG_COUNT,
+             'Total count': shared.TAG_COUNT},
+        )
+        layout.addWidget(self.sort_button)
 
         # Buttons
         button_box = QDialogButtonBox(self)
@@ -166,29 +187,29 @@ class TaggingWindow(QtWidgets.QDialog):
             return
         tag = self.tag_input.text().strip()
         if tag:
-            tags = {item.get_tag_name(): item for item in self.tag_list.items()}
+            tags = {item.tag_name: item for item in self.tag_list.items()}
             if tag in tags:
                 item = tags[tag]
                 item.setCheckState(Qt.Checked)
             else:
                 item = TaggingListItem(f'{tag} (NEW)')
-                item.set_tag_name(tag)
-                item.set_tag_count(0, 0)
+                item.tag_name = tag
+                item.tag_count = 0
+                item.visible_tag_count = 0
                 item.setCheckState(Qt.Checked)
                 self.tag_list.insertRow(0, item)
             self.tag_input.clear()
             self.tag_list.model().sort(0)
-            # self.tag_list.sortItems()
 
     @classmethod
     def get_tag_changes(cls, images: List[ImageData], total_tags: Counter[str],
                         parent: QtWidgets.QWidget) -> Optional[TagChanges]:
         dialog = cls(images, total_tags, parent)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            tags_to_add = frozenset(item.get_tag_name()
+            tags_to_add = frozenset(item.tag_name
                                     for item in dialog.tag_list.items()
                                     if item.checkState() == Qt.Checked)
-            tags_to_remove = frozenset(item.get_tag_name()
+            tags_to_remove = frozenset(item.tag_name
                                        for item in dialog.tag_list.items()
                                        if item.checkState() == Qt.Unchecked)
             return TagChanges(

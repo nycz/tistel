@@ -9,28 +9,6 @@ from . import shared
 from .shared import ImageData, ListWidget2, TagState, TagStates
 
 
-class SortButton(QtWidgets.QPushButton):
-    def __init__(self, text: str, object_name: str, group: QtWidgets.QButtonGroup,
-                 parent: QtWidgets.QWidget, checked: bool = False) -> None:
-        super().__init__(text, parent)
-        self.reversed = False
-        self.setObjectName(object_name)
-        self.setCheckable(True)
-        self.setChecked(checked)
-        group.addButton(self)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == Qt.RightButton:
-            self.reversed = not self.reversed
-            self.setText(self.text()[::-1])
-        elif event.button() == Qt.LeftButton:
-            self.setChecked(True)
-        cast(Signal0, self.pressed).emit()
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        return
-
-
 class TagListContainer(QtWidgets.QWidget):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -46,13 +24,8 @@ class TagListContainer(QtWidgets.QWidget):
         clear_button.setObjectName('clear_button')
         sort_buttons = QtWidgets.QButtonGroup(self)
         sort_buttons.setExclusive(True)
-        self.sort_alpha_button = SortButton('a-z', 'sort_alpha_button', sort_buttons,
-                                            self, checked=True)
-        self.sort_count_button = SortButton('0-9', 'sort_count_button', sort_buttons, self)
         buttons_hbox.addWidget(clear_button)
         buttons_hbox.addStretch()
-        buttons_hbox.addWidget(self.sort_alpha_button)
-        buttons_hbox.addWidget(self.sort_count_button)
 
         # Tag list
         self.list_widget = TagListWidget(self)
@@ -62,23 +35,13 @@ class TagListContainer(QtWidgets.QWidget):
         self.tag_state_updated = self.list_widget.tag_state_updated
         layout.addWidget(self.list_widget)
 
-        def sort_button_pressed(button: SortButton) -> None:
-            if not button.isChecked():
-                return
-            cast(QtCore.QSortFilterProxyModel, self.list_widget.model()).setSortRole(
-                shared.TAG_NAME if button == self.sort_alpha_button else shared.TAG_COUNT
-            )
-            self.list_widget.model().sort(0, Qt.DescendingOrder
-                                          if button.reversed else Qt.AscendingOrder)
-
-        def alpha_sort_button_pressed() -> None:
-            sort_button_pressed(self.sort_alpha_button)
-
-        def count_sort_button_pressed() -> None:
-            sort_button_pressed(self.sort_count_button)
-
-        cast(Signal0, self.sort_alpha_button.pressed).connect(alpha_sort_button_pressed)
-        cast(Signal0, self.sort_count_button.pressed).connect(count_sort_button_pressed)
+        self.sort_button = shared.make_sort_menu(
+            self,
+            cast(QtCore.QSortFilterProxyModel, self.list_widget.model()),
+            {'Name': shared.TAG_NAME,
+             'Count': shared.TAG_COUNT},
+        )
+        buttons_hbox.addWidget(self.sort_button)
 
         def clear_tag_filters() -> None:
             for item in self.list_widget.items():
@@ -109,17 +72,12 @@ class TagListContainer(QtWidgets.QWidget):
                          blacklist=frozenset(blacklist),
                          untagged_state=untagged_state)
 
-    def sort_tags(self) -> None:
-        button = (self.sort_alpha_button if self.sort_alpha_button.isChecked()
-                  else self.sort_count_button)
-        self.list_widget.model().sort(0, Qt.DescendingOrder
-                                      if button.reversed else Qt.AscendingOrder)
-
     def set_tags(self, tags: Counter[str]) -> None:
         self.list_widget.clear()
         for tag, count in tags.most_common():
             self.list_widget.create_tag(tag, count)
-        self.sort_tags()
+        model = cast(QtCore.QSortFilterProxyModel, self.list_widget.model())
+        model.sort(0, model.sortOrder())
 
     def update_tags(self, untagged_diff: int, tag_count_diff: Counter[str],
                     created_tags: FrozenSet[str]) -> None:
