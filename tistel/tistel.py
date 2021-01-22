@@ -2,7 +2,6 @@
 import logging
 import sys
 import time
-import typing
 from pathlib import Path
 from typing import (Any, Counter, Dict, FrozenSet, List, NamedTuple, Optional,
                     Set, cast)
@@ -71,7 +70,8 @@ class MainWindow(app.RootWindow):
 
         # Settings
         self.config = config
-        self.tag_count: typing.Counter[str] = Counter()
+        self.untagged_count = 0
+        self.tag_count: Counter[str] = Counter()
 
         # Main layout
         kill_theming(self.layout())
@@ -298,8 +298,9 @@ class MainWindow(app.RootWindow):
             cache.images[path].tags = list(tags)
         cache.save()
         # Update the tag list
+        self.untagged_count += changes.untagged_diff
         self.tag_count.update(changes.new_tag_count)
-        self.sidebar.tag_list.update_tags(changes.untagged_diff, changes.new_tag_count,
+        self.sidebar.tag_list.update_tags(self.untagged_count, changes.new_tag_count,
                                           changes.created_tags)
         self.update_tag_filter()
         self.thumb_view.setCurrentIndex(current_index)
@@ -327,13 +328,13 @@ class MainWindow(app.RootWindow):
         self.indexer_progressbar.accept()
         result = self.thumb_view.load_index(skip_thumb_cache)
         if result is not None:
-            self.tag_count = result
-            self.sidebar.tag_list.set_tags(result)
+            self.untagged_count, self.tag_count = result
+            self.sidebar.tag_list.set_tags(self.untagged_count, self.tag_count)
         self.sidebar.dir_tree.update_paths(self.config.active_paths)
 
     def update_tag_filter(self) -> None:
         self.thumb_view.set_tag_filter(self.sidebar.tag_list.get_tag_states())
-        self.sidebar.tag_list.update_visible_tags(self.thumb_view.get_tag_count())
+        self.sidebar.tag_list.update_visible_tags(self.thumb_view.get_tag_count()[1])
         if self.thumb_view.visibleCount():
             self.thumb_view.setCurrentRow(0)
         else:

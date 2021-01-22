@@ -27,13 +27,21 @@ class TagListContainer(QtWidgets.QWidget):
         buttons_hbox.addWidget(clear_button)
         buttons_hbox.addStretch()
 
+        # Filter untagged buttons
+        self.show_untagged_button = QtWidgets.QPushButton('Show untagged', self)
+        self.show_untagged_button.setObjectName('show_untagged_button')
+        self.show_untagged_button.setCheckable(True)
+        layout.addWidget(self.show_untagged_button)
+
         # Tag list
         self.list_widget = TagListWidget(self)
         self.list_widget.setObjectName('tag_list')
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.list_widget.setFocusPolicy(Qt.NoFocus)
-        self.tag_state_updated = self.list_widget.tag_state_updated
         layout.addWidget(self.list_widget)
+
+        self.tag_state_updated = self.list_widget.tag_state_updated
+        self.show_untagged_button.toggled.connect(self.tag_state_updated.emit)
 
         self.sort_button = shared.make_sort_menu(
             self,
@@ -58,13 +66,13 @@ class TagListContainer(QtWidgets.QWidget):
     def get_tag_states(self) -> TagStates:
         whitelist = set()
         blacklist = set()
-        untagged_state = TagState.DEFAULT
+        untagged_state = (TagState.WHITELISTED
+                          if self.show_untagged_button.isChecked()
+                          else TagState.DEFAULT)
         for tag_item in self.list_widget.items():
             state = tag_item.tag_state
             tag = tag_item.tag_name
-            if tag == '':
-                untagged_state = state
-            elif state == TagState.WHITELISTED:
+            if state == TagState.WHITELISTED:
                 whitelist.add(tag)
             elif state == TagState.BLACKLISTED:
                 blacklist.add(tag)
@@ -72,14 +80,15 @@ class TagListContainer(QtWidgets.QWidget):
                          blacklist=frozenset(blacklist),
                          untagged_state=untagged_state)
 
-    def set_tags(self, tags: Counter[str]) -> None:
+    def set_tags(self, untagged: int, tags: Counter[str]) -> None:
         self.list_widget.clear()
         for tag, count in tags.most_common():
             self.list_widget.create_tag(tag, count)
+        self.show_untagged_button.setText(f'Show untagged ({untagged})')
         model = cast(QtCore.QSortFilterProxyModel, self.list_widget.model())
         model.sort(0, model.sortOrder())
 
-    def update_tags(self, untagged_diff: int, tag_count_diff: Counter[str],
+    def update_tags(self, untagged: int, tag_count_diff: Counter[str],
                     created_tags: FrozenSet[str]) -> None:
         tag_items_to_delete: List[int] = []
         for i, tag_item in enumerate(self.list_widget.items()):
@@ -88,7 +97,6 @@ class TagListContainer(QtWidgets.QWidget):
             if diff != 0:
                 new_count = tag_item.tag_count + diff
                 if new_count <= 0:
-                    # del self.tag_count[tag]
                     tag_items_to_delete.append(i)
                 tag_item.tag_count = new_count
         # Get rid of the items in reverse order to not mess up the numbers
@@ -98,6 +106,7 @@ class TagListContainer(QtWidgets.QWidget):
             count = tag_count_diff.get(tag, 0)
             if count > 0:
                 self.list_widget.create_tag(tag, count)
+        self.show_untagged_button.setText(f'Show untagged ({untagged})')
 
     def update_visible_tags(self, tag_count: Counter[str]) -> None:
         for item in self.list_widget.items():
@@ -141,7 +150,7 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
             font.setBold(False)
         painter.setFont(font)
         painter.setPen(color)
-        painter.drawText(rect, Qt.TextSingleLine, tag or '<Untagged>')
+        painter.drawText(rect, Qt.TextSingleLine, tag)
         painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine,
                          f'{visible_count} / {count}')
         if tag in parent._selected_item_tags:

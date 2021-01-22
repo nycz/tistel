@@ -283,7 +283,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
     def allow_fullscreen(self) -> bool:
         return self._mode == Mode.normal
 
-    def get_tag_count(self) -> Counter[str]:
+    def get_tag_count(self) -> Tuple[int, Counter[str]]:
         untagged = 0
         tag_count: Counter[str] = Counter()
         for item in self.visibleItems():
@@ -292,8 +292,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
                 untagged += 1
             else:
                 tag_count.update(tags)
-        tag_count[''] = untagged
-        return tag_count
+        return (untagged, tag_count)
 
     def selectedItems(self) -> List[ImageData]:
         out: List[ImageData] = []
@@ -387,7 +386,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             painter.setPen(pen)
             painter.drawRect(rect)
 
-    def load_index(self, skip_thumb_cache: bool) -> Optional[Counter[str]]:
+    def load_index(self, skip_thumb_cache: bool) -> Optional[Tuple[int, Counter[str]]]:
         if not CACHE.exists():
             return None
         self.clear()
@@ -427,9 +426,6 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         if not self.selectionModel().currentIndex().isValid():
             self.setCurrentRow(0)
         self.image_queued.emit(self.batch, imgs)
-        # tags = [('', untagged)]
-        # for tag, count in tag_count.most_common():
-        #     tags.append((tag, count))
         total = self.count()
         if total > 0:
             self.progress.setMaximum(total)
@@ -438,7 +434,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         else:
             self.progress.hide()
         self.update_selection_info()
-        return tag_count
+        return (untagged, tag_count)
 
     def add_thumbnail(self, index: int, batch: int, icon: QtGui.QIcon) -> None:
         if batch != self.batch:
