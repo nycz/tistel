@@ -400,8 +400,9 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             super().keyPressEvent(event)
             p2 = self.selectionModel().currentIndex()
             if self._mode == Mode.select and int(event.modifiers()) & Qt.ShiftModifier:
-                s = self.selectionModel().selection()
-                s.select(p1, p2)
+                self.selectionModel().selection()
+                s = QtCore.QItemSelection(p1, p2)
+                s.merge(self.selectionModel().selection(), QtCore.QItemSelectionModel.Select)
                 self.selectionModel().select(s, QtCore.QItemSelectionModel.Select)
         else:
             event.ignore()
