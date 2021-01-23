@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, cast
 
-from libsyntyche.widgets import Signal0, Signal2, mk_signal1
+from libsyntyche.widgets import Signal0, Signal2, kill_theming, mk_signal1
 from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QPushButton
@@ -16,16 +16,18 @@ class SideBar(QtWidgets.QWidget):
     def __init__(self, config: Settings, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        kill_theming(layout)
 
         # Tab bar
         tab_bar_grid = QtWidgets.QGridLayout()
+        kill_theming(tab_bar_grid)
         layout.addLayout(tab_bar_grid)
         self.tab_bar_buttons = QtWidgets.QButtonGroup()
         self.tab_bar_buttons.setExclusive(True)
 
         # Tab content stack
         stack = QtWidgets.QStackedLayout()
+        kill_theming(stack)
         layout.addLayout(stack)
 
         def select_tab(tab_id: int, checked: bool) -> None:
@@ -58,8 +60,11 @@ class SideBar(QtWidgets.QWidget):
 
         # Buttons at the bottom
         bottom_row = QtWidgets.QHBoxLayout()
+        kill_theming(bottom_row)
         self.settings_button = QtWidgets.QPushButton('Settings', self)
+        self.settings_button.setObjectName('settings_button')
         bottom_row.addWidget(self.settings_button)
         self.reload_button = QtWidgets.QPushButton('Reload', self)
+        self.reload_button.setObjectName('reload_button')
         bottom_row.addWidget(self.reload_button)
         layout.addLayout(bottom_row)

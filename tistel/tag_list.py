@@ -28,10 +28,9 @@ class TagListContainer(QtWidgets.QWidget):
         buttons_hbox.addStretch()
 
         # Filter untagged buttons
-        self.show_untagged_button = QtWidgets.QPushButton('Show untagged', self)
-        self.show_untagged_button.setObjectName('show_untagged_button')
-        self.show_untagged_button.setCheckable(True)
-        layout.addWidget(self.show_untagged_button)
+        self.show_untagged_toggle = QtWidgets.QCheckBox('Show untagged', self)
+        self.show_untagged_toggle.setObjectName('show_untagged_toggle')
+        layout.addWidget(self.show_untagged_toggle)
 
         # Tag list
         self.list_widget = TagListWidget(self)
@@ -41,7 +40,7 @@ class TagListContainer(QtWidgets.QWidget):
         layout.addWidget(self.list_widget)
 
         self.tag_state_updated = self.list_widget.tag_state_updated
-        self.show_untagged_button.toggled.connect(self.tag_state_updated.emit)
+        self.show_untagged_toggle.toggled.connect(self.tag_state_updated.emit)
 
         self.sort_button = shared.make_sort_menu(
             self,
@@ -67,7 +66,7 @@ class TagListContainer(QtWidgets.QWidget):
         whitelist = set()
         blacklist = set()
         untagged_state = (TagState.WHITELISTED
-                          if self.show_untagged_button.isChecked()
+                          if self.show_untagged_toggle.isChecked()
                           else TagState.DEFAULT)
         for tag_item in self.list_widget.items():
             state = tag_item.tag_state
@@ -84,7 +83,7 @@ class TagListContainer(QtWidgets.QWidget):
         self.list_widget.clear()
         for tag, count in tags.most_common():
             self.list_widget.create_tag(tag, count)
-        self.show_untagged_button.setText(f'Show untagged ({untagged})')
+        self.show_untagged_toggle.setText(f'Show untagged ({untagged})')
         model = cast(QtCore.QSortFilterProxyModel, self.list_widget.model())
         model.sort(0, model.sortOrder())
 
@@ -106,7 +105,7 @@ class TagListContainer(QtWidgets.QWidget):
             count = tag_count_diff.get(tag, 0)
             if count > 0:
                 self.list_widget.create_tag(tag, count)
-        self.show_untagged_button.setText(f'Show untagged ({untagged})')
+        self.show_untagged_toggle.setText(f'Show untagged ({untagged})')
 
     def update_visible_tags(self, tag_count: Counter[str]) -> None:
         for item in self.list_widget.items():
@@ -128,7 +127,7 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         padding = (option.rect.height() - option.fontMetrics.height()) // 2
         rect = option.rect.adjusted(padding + dot_width, padding, -padding, -padding)
         if tag in parent._selected_item_tags:
-            painter.fillRect(option.rect, QColor(255, 255, 150, 10))
+            painter.fillRect(option.rect, parent.current_image_tags_color)
         state = item.tag_state
         colors = {TagState.WHITELISTED: cast(QColor, parent.whitelisted_color),
                   TagState.DEFAULT: cast(QColor, parent.default_color),
@@ -140,7 +139,7 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         count = item.tag_count
         visible_count = item.visible_tag_count
         if item.hovering:
-            painter.fillRect(option.rect, QColor(255, 255, 255, 20))
+            painter.fillRect(option.rect, parent.hover_background_color)
         if (count == 0 or visible_count == 0) and state != TagState.BLACKLISTED:
             color.setAlphaF(0.4)
             font.setItalic(True)
@@ -151,17 +150,7 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         painter.setFont(font)
         painter.setPen(color)
         painter.drawText(rect, Qt.TextSingleLine, tag)
-        painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine,
-                         f'{visible_count} / {count}')
-        if tag in parent._selected_item_tags:
-            pen = QtGui.QPen()
-            pen.setWidth(0)
-            painter.setPen(pen)
-            painter.setBrush(QtGui.QColor('#ffffcc'))
-            painter.drawEllipse(
-                QtCore.QPoint(padding + dot_width // 2,
-                              option.rect.top() + option.rect.height() // 2),
-                3, 3)
+        painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, f'{visible_count} / {count}')
 
 
 class TagListItem(QtGui.QStandardItem):
@@ -215,6 +204,8 @@ class TagListWidget(ListWidget2[TagListItem]):
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
+        self._hover_background_color = QColor(Qt.gray)
+        self._current_image_tags_color = QColor(Qt.white)
         self.setItemDelegate(TagListDelegate(self))
         self.setMouseTracking(True)
         self.last_item: Optional[TagListItem] = None
@@ -267,6 +258,22 @@ class TagListWidget(ListWidget2[TagListItem]):
     @blacklisted_color.setter  # type: ignore
     def blacklisted_color(self, color: QColor) -> None:
         self._blacklisted_color = color
+
+    @pyqtProperty(QColor)
+    def hover_background_color(self) -> QColor:
+        return QColor(self._hover_background_color)
+
+    @hover_background_color.setter  # type: ignore
+    def hover_background_color(self, color: QColor) -> None:
+        self._hover_background_color = color
+
+    @pyqtProperty(QColor)
+    def current_image_tags_color(self) -> QColor:
+        return QColor(self._current_image_tags_color)
+
+    @current_image_tags_color.setter  # type: ignore
+    def current_image_tags_color(self, color: QColor) -> None:
+        self._current_image_tags_color = color
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         item = self.itemAt(event.pos())

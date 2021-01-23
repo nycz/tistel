@@ -319,6 +319,7 @@ def make_sort_menu(parent: QtWidgets.QWidget,
     update_sorting(sort_key_actions[0])
 
     button = QtWidgets.QPushButton('Sort...', parent)
+    button.setObjectName('sort_menu_button')
     def show_menu() -> None:
         menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
 

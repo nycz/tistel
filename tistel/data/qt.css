@@ -1,3 +1,34 @@
+/* Colors */
+QPushButton {
+  background-color: #0cf;
+  color: black;
+}
+#tag_list {
+  qproperty-default_color: #fff;
+  qproperty-whitelisted_color: #aaa;
+  qproperty-blacklisted_color: #aaa;
+  qproperty-hover_background_color: #004a80;
+  qproperty-current_image_tags_color: #002947;
+}
+#show_untagged_toggle:hover {
+  background-color: #004a80;
+}
+#tag_list_box, #tag_list, #show_untagged_toggle {
+  background: #111;
+}
+#show_untagged_toggle::indicator:checked {
+  background: #002947;
+}
+
+#thumb_view_status_bar[mode="normal"] {
+  background-color: #222;
+}
+#thumb_view_status_bar[mode="select"] {
+  background-color: #004a80;
+}
+
+/* End colors */
+
 #thumb_view, #image_view {
   color: white;
 }
@@ -32,13 +63,6 @@
   padding-left: 5px;
   padding-top: 2px;
 }
-#thumb_view_status_bar[mode="normal"] {
-  background-color: #334;
-}
-#thumb_view_status_bar[mode="select"] {
-  background-color: #364;
-}
-
 #thumb_view_mode_label {
   font-weight: bold;
 }
@@ -54,19 +78,13 @@
 #image_view {
   background: black;
 }
-
-#tag_list_box {
-  background: #111;
+#tag_list, QPushButton {
+  font-size: 14px;
 }
 
-#tag_list { 
+#tag_list {
   border-top: 2px solid black;
   padding: 2px;
-  background: #111;
-  font-size: 14px;
-  qproperty-default_color: #fff;
-  qproperty-whitelisted_color: #ada;
-  qproperty-blacklisted_color: #daa;
 }
 
 #tag_list::item {
@@ -74,10 +92,40 @@
   background: blue;
 }
 
-#clear_button, #sort_alpha_button, #sort_count_button {
+QPushButton {
+  border: 0;
+  padding: 4px 10px;
+  font-size: 14px;
+  border-bottom-right-radius: 6px;
+  border-top-left-radius: 6px;
+  margin: 3px 6px;
+}
+
+#sort_menu_button {
+  /*border-bottom-left-radius: 0;*/
+}
+
+#show_untagged_toggle {
+  /*background: #;*/
+  padding: 7px 14px;
+  color: white;
+  font-size: 14px;
+  /*margin: 4px auto;*/
+  spacing: 10px;
+}
+#show_untagged_toggle::indicator {
+  background: white;
+}
+#show_untagged_toggle::indicator:unchecked {
+}
+#show_untagged_toggle::indicator:checked {
+  border: 2px solid white;
+}
+
+/*#clear_button {
   padding: 5px;
   margin: 4px;
-}
+}*/
 
 #sort_alpha_button, #sort_count_button {
   margin-left: 0;
@@ -103,22 +151,7 @@
   background: #577;
 }
 
-#clear_button {
-  background: #211;
-  border: 2px solid #877;
-  color: #eee;
-}
-
-#clear_button:hover {
-  background: #433;
-  border: 2px solid #a99;
-  color: white;
-}
-
-#clear_button:pressed {
-  background: #1c0c0c;
-  border: 2px solid #766;
-  color: #fcc;
+#show_untagged_button:checked {
 }
 
 MainWindow {
