@@ -397,6 +397,7 @@ def main() -> int:
     parser.add_argument('-p', '--path', nargs='+', dest='paths',
                         metavar='path', type=Path,
                         help='Use these paths instead of the settings')
+    parser.add_argument('--auto-refresh-css', action='store_true')
     logging.basicConfig()
 
     args = parser.parse_args()
@@ -414,7 +415,10 @@ def main() -> int:
     event_filter = AppEventFilter()
     app.installEventFilter(event_filter)
     app.setStyleSheet(CSS_FILE.read_text())
-
+    if args.auto_refresh_css:
+        def refresh_css() -> None:
+            app.setStyleSheet(CSS_FILE.read_text())
+        event_filter.activation_event.connect(refresh_css)
     paths: List[Path] = args.paths
     config = Settings.load(paths)
     window = MainWindow(config)
