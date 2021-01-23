@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 import re
 import subprocess
@@ -94,6 +95,5 @@ def set_tags(fname: Path, tags: Set[str]) -> None:
                          f'stderr: {stderr!r}')
     else:
         if result:
-            print(f'\x1b[31mWarnings when tags added to file {fname!r}\x1b[0m')
-            print(result)
+            logging.warning(f'warnings when adding tags file {fname!r}: {result!r}')
         return

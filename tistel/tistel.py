@@ -290,13 +290,14 @@ class MainWindow(app.RootWindow):
             return
         # Update the cache
         if not CACHE.exists():
-            print('WARNING: no cache! probably reload ??')
+            logging.error("The cache couldn't be found! This shouldn't happen!")
             return
         cache = Cache.load()
         cache.updated = time.time()
         for path, tags in changes.updated_files.items():
             if path not in cache.images:
-                print('WARNING: img not in cache ??')
+                logging.error(f"The image at {path!r} couldn't be found in the cache! "
+                              "This shouldn't happen!")
                 continue
             cache.images[path].tags = list(tags)
         cache.save()
@@ -380,7 +381,7 @@ def tag_images(original_tags: Set[str], changes: TagChanges,
             try:
                 jfti.set_tags(image.path, new_tags)
             except Exception:
-                print('FAIL', image.path)
+                logging.exception(f'failed to set tags {new_tags!r} in {image.path!r}')
                 raise
             image.tags = new_tags
             updated_files[image.path] = new_tags

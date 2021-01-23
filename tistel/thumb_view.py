@@ -1,4 +1,5 @@
 import enum
+import logging
 from pathlib import Path
 from typing import Counter, FrozenSet, List, Optional, Set, Tuple, cast
 
@@ -293,7 +294,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
                         del self.selected_indexes[n]
                         break
                 else:
-                    print('ERROR: failed to remove selection index!')
+                    logging.warning('failed to remove selection index')
         if selected is not None:
             self.selected_indexes.extend(
                 QtCore.QPersistentModelIndex(self._filter_model.mapToSource(i))

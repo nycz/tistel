@@ -36,7 +36,7 @@ def extract_metadata(path: Path) -> Tuple[List[str], Tuple[int, int]]:
     try:
         tags = sorted(jfti.read_tags(path))
     except Exception:
-        print(f'Getting metadata failed in: {path}')
+        logging.exception(f'getting metadata failed in file {path!r}')
         raise
     size = jfti.dimensions(path)
     return tags, size
@@ -218,8 +218,7 @@ class Indexer(QtCore.QObject):
             except OSError:
                 continue
             except Exception as e:
-                # TODO: handle this better and log it
-                print(e)
+                logging.exception(f'failed to index image {path!r}')
             else:
                 cache.images[path] = CachedImageData(
                     tags=tags,
