@@ -5,7 +5,7 @@ from typing import Counter, FrozenSet, List, Optional, Set, Tuple, cast
 from libsyntyche.widgets import (Signal0, Signal1, Signal2, mk_signal1,
                                  mk_signal2)
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt, pyqtProperty  # type: ignore
+from PyQt5.QtCore import QPoint, Qt, pyqtProperty  # type: ignore
 
 from . import jfti, shared
 from .image_loading import THUMB_SIZE, ImageLoader
@@ -175,6 +175,7 @@ class ThumbView(ListWidget2[ThumbViewItem]):
     image_queued: Signal2[int, List[Tuple[int, bool, Path]]] = mk_signal2(int, list)
     mode_changed = mk_signal1(Mode)
     image_selected = cast(Signal1[Optional[ImageData]], mk_signal1(object))
+    visible_selection_changed = cast(Signal1[List[ImageData]], mk_signal1(list))
 
     def __init__(self, progress: ProgressBar, status_bar: StatusBar,
                  config: Settings, parent: QtWidgets.QWidget) -> None:
@@ -188,6 +189,8 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         self.batch = 0
         self.scroll_ratio: Optional[float] = None
         self.selected_indexes: List[QtCore.QPersistentModelIndex] = []
+        self._current_image_color = QtGui.QColor(Qt.green)
+        self._selected_image_overlay_color = QtGui.QColor(0, 255, 0, 40)
 
         self.set_mode(Mode.normal, force=True)
 
@@ -242,6 +245,31 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             self.image_selected.emit(current)
 
         self.currentItemChanged.connect(emit_image_selected)
+
+        def emit_visible_selection_changed(selected: QtCore.QItemSelection,
+                                           deselected: QtCore.QItemSelection) -> None:
+            self.visible_selection_changed.emit([
+                self.itemFromIndex(index)
+                for index in self.selectionModel().selectedIndexes()
+            ])
+
+        self.selectionModel().selectionChanged.connect(emit_visible_selection_changed)
+
+    @pyqtProperty(QtGui.QColor)
+    def selected_image_overlay_color(self) -> QtGui.QColor:
+        return QtGui.QColor(self._selected_image_overlay_color)
+
+    @selected_image_overlay_color.setter  # type: ignore
+    def selected_image_overlay_color(self, color: QtGui.QColor) -> None:
+        self._selected_image_overlay_color = color
+
+    @pyqtProperty(QtGui.QColor)
+    def current_image_color(self) -> QtGui.QColor:
+        return QtGui.QColor(self._current_image_color)
+
+    @current_image_color.setter  # type: ignore
+    def current_image_color(self, color: QtGui.QColor) -> None:
+        self._current_image_color = color
 
     def set_tag_filter(self, states: TagStates) -> None:
         # Disconnect the selection changed signal to stop it from overwriting
@@ -300,6 +328,10 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             out.append(cast(ThumbViewItem,
                             self._model.itemFromIndex(QtCore.QModelIndex(p_index))))
         return out
+
+    @property
+    def mode(self) -> Mode:
+        return self._mode
 
     def set_mode(self, mode: Mode, force: bool = False) -> None:
         if mode != self._mode or force:
@@ -376,15 +408,33 @@ class ThumbView(ListWidget2[ThumbViewItem]):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         super().paintEvent(event)
+        painter = QtGui.QPainter(self.viewport())
+        cur_margin = 5
+        sel_margin = int(cur_margin * 2) + 2
+        for index in self.selectionModel().selectedIndexes():
+            rect = self.visualRect(index).adjusted(sel_margin, sel_margin,
+                                                   -sel_margin, -sel_margin)
+            painter.fillRect(rect, cast(QtGui.QColor, self.selected_image_overlay_color))
+
         current = self.selectionModel().currentIndex()
-        if current.isValid():
-            painter = QtGui.QPainter(self.viewport())
-            rect = self.visualRect(current).adjusted(6, 6, -7, -7)
-            pen = QtGui.QPen(QtGui.QColor('#1bf986'))
-            pen.setWidth(2)
+        if current.isValid() and current.row() >= 0:
+            rect = self.visualRect(current).adjusted(cur_margin, cur_margin,
+                                                     -cur_margin, -cur_margin)
+            pen = QtGui.QPen(self.current_image_color)
+            pen.setWidth(5)
             pen.setJoinStyle(Qt.MiterJoin)
             painter.setPen(pen)
-            painter.drawRect(rect)
+            length = rect.height() // 6
+            xdiff = QPoint(length, 0)
+            ydiff = QPoint(0, length)
+            tl = rect.topLeft()
+            painter.drawPolyline(tl + xdiff, tl, tl + ydiff)
+            tr = rect.topRight()
+            painter.drawPolyline(tr - xdiff, tr, tr + ydiff)
+            bl = rect.bottomLeft()
+            painter.drawPolyline(bl + xdiff, bl, bl - ydiff)
+            br = rect.bottomRight()
+            painter.drawPolyline(br - xdiff, br, br - ydiff)
 
     def load_index(self, skip_thumb_cache: bool) -> Optional[Tuple[int, Counter[str]]]:
         if not CACHE.exists():
@@ -393,7 +443,6 @@ class ThumbView(ListWidget2[ThumbViewItem]):
         self.batch += 1
         imgs = []
         cache = Cache.load()
-        # cache = json.loads(CACHE.read_text())
         tag_count: Counter[str] = Counter()
         root_paths = [p for p in self.config.active_paths]
         n = 0

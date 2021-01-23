@@ -110,6 +110,8 @@ class MainWindow(app.RootWindow):
             self.update_tag_filter)
         self.thumb_view.image_selected.connect(
             self.sidebar.tag_list.set_current_image_data)
+        self.thumb_view.visible_selection_changed.connect(
+            self.sidebar.tag_list.set_selection_image_data)
 
         # Right column - big image
         self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)
@@ -118,6 +120,8 @@ class MainWindow(app.RootWindow):
         self.image_view.setObjectName('image_view')
 
         def load_big_image(current: Optional[ImageData]) -> None:
+            if not self.image_view.isVisible():
+                return
             if current:
                 path = current.path
                 orientation = try_to_get_orientation(path)
@@ -176,21 +180,20 @@ class MainWindow(app.RootWindow):
         cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('f'), self).activated
              ).connect(toggle_fullscreen)
 
-        def activate_select_mode() -> None:
-            self.thumb_view.set_mode(ThumbViewMode.select)
-
-        def activate_normal_mode() -> None:
-            self.thumb_view.set_mode(ThumbViewMode.normal)
+        def toggle_select_mode() -> None:
+            if self.thumb_view.mode == ThumbViewMode.select:
+                self.thumb_view.set_mode(ThumbViewMode.normal)
+            else:
+                self.thumb_view.set_mode(ThumbViewMode.select)
 
         cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('v'), self).activated
-             ).connect(activate_select_mode)
-        cast(Signal0, QtWidgets.QShortcut(QtGui.QKeySequence('n'), self).activated
-             ).connect(activate_normal_mode)
+             ).connect(toggle_select_mode)
 
         # On thumbnail view mode change
         def thumb_view_mode_change(mode: ThumbViewMode) -> None:
             if mode == ThumbViewMode.normal:
                 self.image_view_splitter.show()
+                load_big_image(self.thumb_view.itemFromIndex(self.thumb_view.currentIndex()))
             elif mode == ThumbViewMode.select:
                 self.image_view_splitter.hide()
 

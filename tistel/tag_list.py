@@ -1,3 +1,4 @@
+import enum
 from typing import Counter, FrozenSet, List, Optional, cast
 
 from libsyntyche.widgets import Signal0, kill_theming, mk_signal0
@@ -7,6 +8,25 @@ from PyQt5.QtGui import QColor
 
 from . import shared
 from .shared import ImageData, ListWidget2, TagState, TagStates
+
+
+class UntaggedToggle(QtWidgets.QCheckBox):
+    def __init__(self, text: str, parent: QtWidgets.QWidget) -> None:
+        super().__init__(text, parent)
+        self.current_is_untagged = False
+        self.selected_has_untagged = False
+
+    def refresh_style(self) -> None:
+        self.style().polish(self)
+
+    @pyqtProperty(str)  # type: ignore
+    def mode(self) -> str:  # type: ignore
+        if self.current_is_untagged:
+            return 'current'
+        elif self.selected_has_untagged:
+            return 'selected'
+        else:
+            return 'none'
 
 
 class TagListContainer(QtWidgets.QWidget):
@@ -28,7 +48,7 @@ class TagListContainer(QtWidgets.QWidget):
         buttons_hbox.addStretch()
 
         # Filter untagged buttons
-        self.show_untagged_toggle = QtWidgets.QCheckBox('Show untagged', self)
+        self.show_untagged_toggle = UntaggedToggle('Show untagged', self)
         self.show_untagged_toggle.setObjectName('show_untagged_toggle')
         layout.addWidget(self.show_untagged_toggle)
 
@@ -53,14 +73,25 @@ class TagListContainer(QtWidgets.QWidget):
         def clear_tag_filters() -> None:
             for item in self.list_widget.items():
                 item.tag_state = TagState.DEFAULT
+            self.show_untagged_toggle.setChecked(False)
             self.list_widget.tag_state_updated.emit()
 
         cast(Signal0, clear_button.clicked).connect(clear_tag_filters)
 
     def set_current_image_data(self, image: Optional[ImageData]) -> None:
-        self.list_widget.selected_item_tags = (
+        self.list_widget.current_image_tags = (
             frozenset() if image is None else frozenset(image.tags)
         )
+        self.show_untagged_toggle.current_is_untagged = (image is not None
+                                                         and len(image.tags) == 0)
+        self.show_untagged_toggle.refresh_style()
+
+    def set_selection_image_data(self, images: List[ImageData]) -> None:
+        self.list_widget.selected_images_tags = frozenset(
+            tag for image in images for tag in image.tags
+        )
+        self.show_untagged_toggle.selected_has_untagged = any(not image.tags for image in images)
+        self.show_untagged_toggle.refresh_style()
 
     def get_tag_states(self) -> TagStates:
         whitelist = set()
@@ -123,11 +154,14 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         item = parent.itemFromIndex(index)
         tag = item.tag_name
         painter.setRenderHints(QtGui.QPainter.Antialiasing)
-        dot_width = 10
+        indicator_width = 12
+        indicator_radius = int(indicator_width * 0.8 / 2)
         padding = (option.rect.height() - option.fontMetrics.height()) // 2
-        rect = option.rect.adjusted(padding + dot_width, padding, -padding, -padding)
-        if tag in parent._selected_item_tags:
-            painter.fillRect(option.rect, parent.current_image_tags_color)
+        rect = option.rect.adjusted(padding + indicator_width, padding, -padding, -padding)
+        if parent.current_image_tags and tag in parent.current_image_tags:
+            painter.fillRect(option.rect, cast(QColor, parent.current_image_tags_color))
+        elif tag in parent.selected_images_tags:
+            painter.fillRect(option.rect, cast(QColor, parent.selected_images_tags_color))
         state = item.tag_state
         colors = {TagState.WHITELISTED: cast(QColor, parent.whitelisted_color),
                   TagState.DEFAULT: cast(QColor, parent.default_color),
@@ -139,16 +173,21 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         count = item.tag_count
         visible_count = item.visible_tag_count
         if item.hovering:
-            painter.fillRect(option.rect, parent.hover_background_color)
+            painter.fillRect(option.rect, QColor(255, 255, 255, 0x33))
         if (count == 0 or visible_count == 0) and state != TagState.BLACKLISTED:
             color.setAlphaF(0.4)
             font.setItalic(True)
-        if state != TagState.DEFAULT:
-            font.setBold(True)
-        elif font.bold():
-            font.setBold(False)
+        font.setBold(state != TagState.DEFAULT)
         painter.setFont(font)
-        painter.setPen(color)
+        pen = QtGui.QPen(color)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        if state in {TagState.WHITELISTED, TagState.BLACKLISTED}:
+            x = (padding + indicator_width) // 2
+            y = rect.center().y()
+            painter.drawLine(x - indicator_radius, y, x + indicator_radius, y)
+            if state == TagState.WHITELISTED:
+                painter.drawLine(x, y - indicator_radius, x, y + indicator_radius)
         painter.drawText(rect, Qt.TextSingleLine, tag)
         painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, f'{visible_count} / {count}')
 
@@ -200,12 +239,14 @@ class TagListWidget(ListWidget2[TagListItem]):
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
-        self._selected_item_tags: FrozenSet[str] = frozenset()
+        self._selected_images_tags: FrozenSet[str] = frozenset()
+        self._current_image_tags: FrozenSet[str] = frozenset()
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
         self._hover_background_color = QColor(Qt.gray)
-        self._current_image_tags_color = QColor(Qt.white)
+        self._current_image_tags_color = QColor(Qt.yellow)
+        self._selected_images_tags_color = QColor(Qt.blue)
         self.setItemDelegate(TagListDelegate(self))
         self.setMouseTracking(True)
         self.last_item: Optional[TagListItem] = None
@@ -223,12 +264,21 @@ class TagListWidget(ListWidget2[TagListItem]):
         self.addItem(item)
 
     @property
-    def selected_item_tags(self) -> FrozenSet[str]:
-        return self._selected_item_tags
+    def selected_images_tags(self) -> FrozenSet[str]:
+        return self._selected_images_tags
 
-    @selected_item_tags.setter
-    def selected_item_tags(self, tags: FrozenSet[str]) -> None:
-        self._selected_item_tags = tags
+    @selected_images_tags.setter
+    def selected_images_tags(self, tags: FrozenSet[str]) -> None:
+        self._selected_images_tags = tags
+        self.update()
+
+    @property
+    def current_image_tags(self) -> FrozenSet[str]:
+        return self._current_image_tags
+
+    @current_image_tags.setter
+    def current_image_tags(self, tags: FrozenSet[str]) -> None:
+        self._current_image_tags = tags
         self.update()
 
     def clear(self) -> None:
@@ -260,12 +310,12 @@ class TagListWidget(ListWidget2[TagListItem]):
         self._blacklisted_color = color
 
     @pyqtProperty(QColor)
-    def hover_background_color(self) -> QColor:
-        return QColor(self._hover_background_color)
+    def selected_images_tags_color(self) -> QColor:
+        return QColor(self._selected_images_tags_color)
 
-    @hover_background_color.setter  # type: ignore
-    def hover_background_color(self, color: QColor) -> None:
-        self._hover_background_color = color
+    @selected_images_tags_color.setter  # type: ignore
+    def selected_images_tags_color(self, color: QColor) -> None:
+        self._selected_images_tags_color = color
 
     @pyqtProperty(QColor)
     def current_image_tags_color(self) -> QColor:
