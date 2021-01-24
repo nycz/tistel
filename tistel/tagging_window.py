@@ -1,7 +1,7 @@
 from typing import (Any, Counter, FrozenSet, List, NamedTuple, Optional, Tuple,
                     cast)
 
-from libsyntyche.widgets import Signal0, Signal1, mk_signal1
+from libsyntyche.widgets import Signal0, Signal1, mk_signal0, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
@@ -25,11 +25,13 @@ class SortProxyModel(QtCore.QSortFilterProxyModel):
 
 class TagInput(QtWidgets.QLineEdit):
     tab_pressed = mk_signal1(bool)
+    do_accept = mk_signal0()
 
     def event(self, raw_ev: QtCore.QEvent) -> bool:
         if raw_ev.type() == QtCore.QEvent.KeyPress:
             ev = cast(QtGui.QKeyEvent, raw_ev)
-            if ev.key() == Qt.Key_Backtab and int(ev.modifiers()) == Qt.ShiftModifier:
+            modifiers = int(ev.modifiers())
+            if ev.key() == Qt.Key_Backtab and modifiers == Qt.ShiftModifier:
                 comp = self.completer()
                 if not comp.popup().isVisible():
                     return False
@@ -45,7 +47,7 @@ class TagInput(QtWidgets.QLineEdit):
                     comp.setCurrentRow(comp.currentRow() - 1)
                     comp.popup().setCurrentIndex(comp.currentIndex())
                 return True
-            elif ev.key() == Qt.Key_Tab and int(ev.modifiers()) == Qt.NoModifier:
+            elif ev.key() == Qt.Key_Tab and modifiers == Qt.NoModifier:
                 comp = self.completer()
                 if not comp.popup().isVisible():
                     return False
@@ -61,9 +63,12 @@ class TagInput(QtWidgets.QLineEdit):
                         comp.setCurrentRow(0)
                         comp.popup().setCurrentIndex(QtCore.QModelIndex())
                 return True
-            elif ev.key() == Qt.Key_Return:
+            elif ev.key() == Qt.Key_Return and modifiers == Qt.NoModifier:
                 self.completer().popup().hide()
                 cast(Signal0, self.returnPressed).emit()
+                return True
+            elif ev.key() == Qt.Key_Return and modifiers == Qt.ControlModifier:
+                self.do_accept.emit()
                 return True
         return super().event(raw_ev)
 
@@ -102,7 +107,6 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
             painter.fillRect(option.rect, QtGui.QColor(255, 255, 255, 0x33))
         painter.drawText(rect, Qt.TextSingleLine, tag + (' (NEW)' if item.is_new else ''))
         painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, f'{visible_count} / {count}')
-
 
 
 class TaggingListItem(CustomDrawListItem):
@@ -193,6 +197,7 @@ class TaggingWindow(QtWidgets.QDialog):
         cast(Signal1[str], self.tag_input.textChanged).connect(update_add_button)
         cast(Signal0, self.tag_input.returnPressed).connect(self._add_tag)
         cast(Signal0, self.add_tag_button.clicked).connect(self._add_tag)
+        self.tag_input.do_accept.connect(self.accept)
 
         # Tag list
         tag_header_layout = QtWidgets.QHBoxLayout()
