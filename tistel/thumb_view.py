@@ -383,28 +383,51 @@ class ThumbView(ListWidget2[ThumbViewItem]):
             )
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if self._mode == Mode.select and event.key() == Qt.Key_A:
-            if int(event.modifiers()) == Qt.ControlModifier:
-                first = self.model().index(0, 0)
-                last = self.model().index(self.model().rowCount() - 1, 0)
-                sel = QtCore.QItemSelection(first, last)
-                self.selectionModel().select(sel, QtCore.QItemSelectionModel.Select)
+        modifiers = int(event.modifiers())
+        if self._mode == Mode.select:
+            if event.key() == Qt.Key_A:
+                # Select all
+                if modifiers == Qt.ControlModifier:
+                    first = self.model().index(0, 0)
+                    last = self.model().index(self.model().rowCount() - 1, 0)
+                    sel = QtCore.QItemSelection(first, last)
+                    self.selectionModel().select(sel, QtCore.QItemSelectionModel.Select)
+                    return
+                # Deselect all
+                elif event.modifiers() == cast(Qt.KeyboardModifiers,
+                                               Qt.ShiftModifier | Qt.ControlModifier):
+                    self.selectionModel().clearSelection()
+                    return
+            elif event.key() == Qt.Key_Space:
+                super().keyPressEvent(event)
                 return
-            elif event.modifiers() == cast(Qt.KeyboardModifiers,
-                                           Qt.ShiftModifier | Qt.ControlModifier):
-                self.selectionModel().clearSelection()
-                return
-        if event.key() in {Qt.Key_Right, Qt.Key_Left, Qt.Key_Up, Qt.Key_Down,
-                           Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home, Qt.Key_End,
-                           Qt.Key_Space}:
-            p1 = self.selectionModel().currentIndex()
-            super().keyPressEvent(event)
-            p2 = self.selectionModel().currentIndex()
-            if self._mode == Mode.select and int(event.modifiers()) & Qt.ShiftModifier:
-                self.selectionModel().selection()
-                s = QtCore.QItemSelection(p1, p2)
-                s.merge(self.selectionModel().selection(), QtCore.QItemSelectionModel.Select)
-                self.selectionModel().select(s, QtCore.QItemSelectionModel.Select)
+
+        QAIV = QtWidgets.QAbstractItemView
+        movement_keys = [
+            ([Qt.Key_Right, Qt.Key_O], QAIV.MoveRight),
+            ([Qt.Key_Left, Qt.Key_N], QAIV.MoveLeft),
+            ([Qt.Key_Up, Qt.Key_H], QAIV.MoveUp),
+            ([Qt.Key_Down, Qt.Key_K], QAIV.MoveDown),
+            ([Qt.Key_PageUp], QAIV.MovePageUp),
+            ([Qt.Key_PageDown], QAIV.MovePageDown),
+            ([Qt.Key_Home], QAIV.MoveHome),
+            ([Qt.Key_End], QAIV.MoveEnd),
+        ]
+
+        for keys, action in movement_keys:
+            if event.key() in keys:
+                start_pos = self.selectionModel().currentIndex()
+                end_pos = self.moveCursor(action, Qt.NoModifier)
+                self.selectionModel().setCurrentIndex(end_pos, QtCore.QItemSelectionModel.NoUpdate)
+                if self._mode == Mode.select and modifiers in {Qt.ShiftModifier, Qt.AltModifier}:
+                    s = QtCore.QItemSelection(start_pos, end_pos)
+                    if modifiers == Qt.ShiftModifier:
+                        s.merge(self.selectionModel().selection(),
+                                QtCore.QItemSelectionModel.Select)
+                        self.selectionModel().select(s, QtCore.QItemSelectionModel.Select)
+                    else:
+                        self.selectionModel().select(s, QtCore.QItemSelectionModel.Deselect)
+                break
         else:
             event.ignore()
 
