@@ -1,5 +1,5 @@
-from typing import (Any, Counter, FrozenSet, List, NamedTuple, Optional, Tuple,
-                    cast)
+from typing import (Any, Counter, Dict, FrozenSet, List, NamedTuple, Optional, Set,
+                    Tuple, cast)
 
 from libsyntyche.widgets import Signal0, Signal1, mk_signal0, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -210,6 +210,7 @@ class TaggingWindow(QtWidgets.QDialog):
         tag_counter: Counter[str] = Counter()
         for img in images:
             tag_counter.update(img.tags)
+        self.original_states: Dict[str, Qt.CheckState] = {}
         for tag, total in total_tags.items():
             count = tag_counter.get(tag, 0)
             item = TaggingListItem(f'{tag} ({count}/{total})')
@@ -220,6 +221,7 @@ class TaggingWindow(QtWidgets.QDialog):
             item.setCheckState(Qt.Checked if count == len(images)
                                else Qt.Unchecked if count == 0
                                else Qt.PartiallyChecked)
+            self.original_states[tag] = item.checkState()
             self.tag_list.addItem(item)
         layout.addWidget(self.tag_list)
         self.tag_input.setFocus()
@@ -241,6 +243,25 @@ class TaggingWindow(QtWidgets.QDialog):
         cast(Signal0, button_box.accepted).connect(self.accept)
         cast(Signal0, button_box.rejected).connect(self.reject)
         layout.addWidget(button_box)
+
+    def reject(self) -> None:
+        items = self.tag_list.items()
+        for item in items:
+            if item.checkState() != self.original_states.get(item.tag_name):
+                QMB = QtWidgets.QMessageBox
+                answer = QMB.question(
+                    self,
+                    'Apply or discard tag changes',
+                    'You still have tag changes. Do you want to apply or discard them?',
+                    (QMB.Cancel | QMB.Discard | QMB.Apply),
+                    QMB.Cancel
+                )
+                if answer == QMB.Discard:
+                    super().reject()
+                elif answer == QMB.Apply:
+                    self.accept()
+                return
+        super().reject()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         if event.key() == Qt.Key_Return:
@@ -274,15 +295,17 @@ class TaggingWindow(QtWidgets.QDialog):
                         parent: QtWidgets.QWidget) -> Optional[TagChanges]:
         dialog = cls(images, total_tags, parent)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            tags_to_add = frozenset(item.tag_name
-                                    for item in dialog.tag_list.items()
-                                    if item.checkState() == Qt.Checked)
-            tags_to_remove = frozenset(item.tag_name
-                                       for item in dialog.tag_list.items()
-                                       if item.checkState() == Qt.Unchecked)
+            tags_to_add: Set[str] = set()
+            tags_to_remove: Set[str] = set()
+            for item in dialog.tag_list.items():
+                if item.checkState() != dialog.original_states.get(item.tag_name):
+                    if item.checkState() == Qt.Checked:
+                        tags_to_add.add(item.tag_name)
+                    elif item.checkState() == Qt.Unchecked:
+                        tags_to_remove.add(item.tag_name)
             return TagChanges(
-                tags_to_add=tags_to_add,
-                tags_to_remove=tags_to_remove,
+                tags_to_add=frozenset(tags_to_add),
+                tags_to_remove=frozenset(tags_to_remove),
             )
         else:
             return None
