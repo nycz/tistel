@@ -5,8 +5,9 @@ import itertools
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Any, Callable, Dict, FrozenSet, Generic, Iterable, List, NamedTuple,
-                    Optional, Protocol, Set, Tuple, TypeVar, Union, cast)
+from typing import (Any, Callable, Dict, FrozenSet, Generic, Iterable, List,
+                    NamedTuple, Optional, Protocol, Set, Tuple, TypeVar, Union,
+                    cast)
 
 from libsyntyche.widgets import Signal2, mk_signal2
 from PyQt5 import QtCore, QtGui, QtSvg, QtWidgets

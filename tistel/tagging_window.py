@@ -1,5 +1,5 @@
-from typing import (Any, Counter, Dict, FrozenSet, List, NamedTuple, Optional, Set,
-                    Tuple, cast)
+from typing import (Any, Counter, Dict, FrozenSet, List, NamedTuple, Optional,
+                    Set, Tuple, cast)
 
 from libsyntyche.widgets import Signal0, Signal1, mk_signal0, mk_signal1
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -7,7 +7,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
 from . import shared
-from .shared import CustomDrawListItem, CustomDrawListWidget, ImageData, ListWidget2
+from .shared import (CustomDrawListItem, CustomDrawListWidget, ImageData,
+                     ListWidget2)
 
 
 class SortProxyModel(QtCore.QSortFilterProxyModel):
