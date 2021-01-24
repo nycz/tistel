@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tistel",
-    version="0.5.2",
+    version="0.5.3",
     author="nycz",
     description="image viewer/organizer",
     install_requires=['PyQt5', 'libsyntyche'],
