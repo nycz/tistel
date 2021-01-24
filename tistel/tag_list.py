@@ -11,22 +11,48 @@ from .shared import ImageData, ListWidget2, TagState, TagStates
 
 
 class UntaggedToggle(QtWidgets.QCheckBox):
-    def __init__(self, text: str, parent: QtWidgets.QWidget) -> None:
-        super().__init__(text, parent)
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
         self.current_is_untagged = False
         self.selected_has_untagged = False
+        self.setCursor(Qt.PointingHandCursor)
+        self.total_count = 0
+        self.setMouseTracking(True)
 
-    def refresh_style(self) -> None:
-        self.style().polish(self)
-
-    @pyqtProperty(str)  # type: ignore
-    def mode(self) -> str:  # type: ignore
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        painter = QtGui.QPainter(self)
+        parent = cast(TagListContainer, self.parent())
         if self.current_is_untagged:
-            return 'current'
+            painter.fillRect(event.rect(),
+                             cast(QColor, parent.list_widget.current_image_tags_color))
         elif self.selected_has_untagged:
-            return 'selected'
-        else:
-            return 'none'
+            painter.fillRect(event.rect(),
+                             cast(QColor, parent.list_widget.selected_images_tags_color))
+        if self.underMouse():
+            painter.fillRect(event.rect(), QColor(255, 255, 255, 0x33))
+        painter.setRenderHints(QtGui.QPainter.Antialiasing)
+        indicator_width = 12
+        indicator_radius = int(indicator_width * 0.8 / 2)
+        fm = QtGui.QFontMetrics(painter.font(), self)
+        padding = (self.height() - fm.height()) // 2
+        rect = event.rect().adjusted(padding + indicator_width, padding, -padding, -padding)
+        if self.checkState() == Qt.Checked:
+            pen = painter.pen()
+            pen.setWidth(2)
+            painter.setPen(pen)
+            x = (padding + indicator_width) // 2
+            y = rect.center().y()
+            painter.drawLine(x - indicator_radius, y, x + indicator_radius, y)
+            painter.drawLine(x, y - indicator_radius, x, y + indicator_radius)
+            font = painter.font()
+            font.setBold(True)
+            painter.setFont(font)
+        painter.drawText(rect, Qt.TextSingleLine, 'Show untagged')
+        painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, str(self.total_count))
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton:
+            self.toggle()
 
 
 class TagListContainer(QtWidgets.QWidget):
@@ -48,9 +74,9 @@ class TagListContainer(QtWidgets.QWidget):
         buttons_hbox.addStretch()
 
         # Filter untagged buttons
-        self.show_untagged_toggle = UntaggedToggle('Show untagged', self)
+        self.show_untagged_toggle = UntaggedToggle(self)
         self.show_untagged_toggle.setObjectName('show_untagged_toggle')
-        layout.addWidget(self.show_untagged_toggle)
+        layout.addWidget(self.show_untagged_toggle, stretch=1)
 
         # Tag list
         self.list_widget = TagListWidget(self)
@@ -84,14 +110,12 @@ class TagListContainer(QtWidgets.QWidget):
         )
         self.show_untagged_toggle.current_is_untagged = (image is not None
                                                          and len(image.tags) == 0)
-        self.show_untagged_toggle.refresh_style()
 
     def set_selection_image_data(self, images: List[ImageData]) -> None:
         self.list_widget.selected_images_tags = frozenset(
             tag for image in images for tag in image.tags
         )
         self.show_untagged_toggle.selected_has_untagged = any(not image.tags for image in images)
-        self.show_untagged_toggle.refresh_style()
 
     def get_tag_states(self) -> TagStates:
         whitelist = set()
@@ -114,7 +138,7 @@ class TagListContainer(QtWidgets.QWidget):
         self.list_widget.clear()
         for tag, count in tags.most_common():
             self.list_widget.create_tag(tag, count)
-        self.show_untagged_toggle.setText(f'Show untagged ({untagged})')
+        self.show_untagged_toggle.total_count = untagged
         model = cast(QtCore.QSortFilterProxyModel, self.list_widget.model())
         model.sort(0, model.sortOrder())
 
@@ -136,7 +160,7 @@ class TagListContainer(QtWidgets.QWidget):
             count = tag_count_diff.get(tag, 0)
             if count > 0:
                 self.list_widget.create_tag(tag, count)
-        self.show_untagged_toggle.setText(f'Show untagged ({untagged})')
+        self.show_untagged_toggle.total_count = untagged
 
     def update_visible_tags(self, tag_count: Counter[str]) -> None:
         for item in self.list_widget.items():
@@ -192,15 +216,7 @@ class TagListDelegate(QtWidgets.QStyledItemDelegate):
         painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, f'{visible_count} / {count}')
 
 
-class TagListItem(QtGui.QStandardItem):
-    @property
-    def hovering(self) -> bool:
-        return cast(bool, self.data(shared.HOVERING))
-
-    @hovering.setter
-    def hovering(self, hovering: bool) -> None:
-        self.setData(hovering, shared.HOVERING)
-
+class TagListItem(shared.CustomDrawListItem):
     @property
     def tag_count(self) -> int:
         return cast(int, self.data(shared.TAG_COUNT))
@@ -234,22 +250,18 @@ class TagListItem(QtGui.QStandardItem):
         self.setData(visible_tag_count, shared.VISIBLE_TAG_COUNT)
 
 
-class TagListWidget(ListWidget2[TagListItem]):
+class TagListWidget(shared.CustomDrawListWidget[TagListItem]):
     tag_state_updated = mk_signal0()
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
-        super().__init__(parent)
+        super().__init__(parent, TagListDelegate)
         self._selected_images_tags: FrozenSet[str] = frozenset()
         self._current_image_tags: FrozenSet[str] = frozenset()
         self._default_color = QColor(Qt.white)
         self._whitelisted_color = QColor(Qt.green)
         self._blacklisted_color = QColor(Qt.red)
-        self._hover_background_color = QColor(Qt.gray)
         self._current_image_tags_color = QColor(Qt.yellow)
         self._selected_images_tags_color = QColor(Qt.blue)
-        self.setItemDelegate(TagListDelegate(self))
-        self.setMouseTracking(True)
-        self.last_item: Optional[TagListItem] = None
 
     @staticmethod
     def _tag_format(tag: str, visible: int, total: int) -> str:
@@ -324,33 +336,6 @@ class TagListWidget(ListWidget2[TagListItem]):
     @current_image_tags_color.setter  # type: ignore
     def current_image_tags_color(self, color: QColor) -> None:
         self._current_image_tags_color = color
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        item = self.itemAt(event.pos())
-        if self.last_item != item:
-            if item is not None:
-                self.setCursor(Qt.PointingHandCursor)
-                item.hovering = True
-            else:
-                self.setCursor(Qt.ArrowCursor)
-            if self.last_item is not None:
-                self.last_item.hovering = False
-            self.last_item = item
-
-    def leaveEvent(self, event: QtCore.QEvent) -> None:
-        super().leaveEvent(event)
-        if self.last_item is not None:
-            self.last_item.hovering = False
-
-    def enterEvent(self, event: QtCore.QEvent) -> None:
-        super().enterEvent(event)
-        if self.last_item is not None:
-            self.last_item.hovering = False
-        item = self.itemAt(cast(QtGui.QEnterEvent, event).pos())
-        if item is not None:
-            self.setCursor(Qt.PointingHandCursor)
-            item.hovering = True
-        self.last_item = item
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         item = self.itemAt(event.pos())

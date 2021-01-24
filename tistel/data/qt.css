@@ -1,8 +1,31 @@
-/* Colors */
-MainWindow {
+/* ============================
+ * ==== COLORS AND BORDERS ====
+ * ============================ */
+
+/*
+ * Base backgrounds
+ */
+MainWindow, #image_view, #tagging_window {
   background: black;
 }
 
+#info_box, #tag_list, #tag_list_box, #thumb_view, QTreeWidget,
+#tagging_window_tag_list,
+QScrollBar:vertical, QAbstractScrollArea::corner, QScrollBar:horizontal {
+  background: #111;
+}
+
+/*
+ * Base foregrounds
+ */
+#show_untagged_toggle, #info_box *, QTreeWidget, #tagging_window > QLabel,
+#tagging_window_tag_list {
+  color: white;
+}
+
+/*
+ * Base buttons colors
+ */
 QPushButton {
   background-color: #0cf;
   color: black;
@@ -13,6 +36,10 @@ QPushButton:hover {
 QPushButton:pressed {
   background-color: #09d;
 }
+
+/*
+ * Tag list colors
+ */
 #tag_list {
   qproperty-default_color: #fff;
   qproperty-whitelisted_color: #fff;
@@ -20,198 +47,144 @@ QPushButton:pressed {
   qproperty-selected_images_tags_color: #002947;
   qproperty-current_image_tags_color: #483400;
 }
-#tag_list_box, #tag_list, #show_untagged_toggle {
-  background: #111;
-}
-#show_untagged_toggle:hover {
-  background-color: #444;
-}
-#show_untagged_toggle[mode="selected"] {
-  background-color: #002947;
-}
-#show_untagged_toggle[mode="selected"]:hover {
-  background-color: #33546c;
-}
-#show_untagged_toggle[mode="current"] {
-  background-color: #483400;
-}
-#show_untagged_toggle[mode="current"]:hover {
-  background-color: #6d5d33;
-}
-#show_untagged_toggle::indicator:checked {
-  background: #002947;
-}
 
+/*
+ * Thumb view colors
+ */
 #thumb_view {
   qproperty-current_image_color: #f90;
   qproperty-selected_image_overlay_color: #3300ccff;
+  selection-background-color: #6cc1af;
 }
-
+#thumb_view_mode_label, #thumb_view_selection_label {
+  color: white;
+}
 #thumb_view_status_bar[mode="normal"] {
   background-color: #222;
 }
 #thumb_view_status_bar[mode="select"] {
   background-color: #004a80;
 }
-
-#thumb_view, #image_view {
-  color: white;
-}
-
-#thumb_view {
-  background: #080808;
-  selection-background-color: #6cc1af;
-}
-
 #thumb_view::item {
   border: 2px solid transparent;
-  selection-background-color: transparent;
 }
-
 #thumb_view::item:hover {
   border-color: #6668ddc4;
 }
-
 #thumb_view::item:selected {
   border-color: #4cf;
 }
-
 #thumb_view::item:selected:hover {
   border-color: white;
 }
 
-/* End colors */
+/*
+ * Tagging window
+ */
 
-#thumb_view::item {
-  margin: 10px;
+
+
+/*
+ * Progress bar
+ */
+QProgressBar {
+  background: black;
+  color: white;
+}
+QProgressBar::chunk {
+  background: #444;
 }
 
-#thumb_view_status_bar {
-  padding-left: 5px;
-  padding-top: 2px;
+/*
+ * Misc colors
+ */
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+  background: #333;
 }
+QSplitter::handle, #main_divider {
+  background: #555;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
+
+
+/* ===============
+ * ==== FONTS ====
+ * =============== */
+
+/*
+ * Base font size
+ */
+#tag_list, QPushButton, #show_untagged_toggle, QTreeWidget, #tagging_window * {
+  font-size: 14px;
+}
+
+/*
+ * Misc font formats
+ */
 #thumb_view_mode_label {
   font-weight: bold;
 }
-
-#thumb_view_mode_label, #thumb_view_selection_label {
-  color: white;
-}
-
-#thumb_view_selection_label {
-  margin-left: 20px;
-}
-
-#image_view {
-  background: black;
-}
-#tag_list, QPushButton {
-  font-size: 14px;
-}
-
-#tag_list {
-  border-top: 2px solid black;
-  padding: 2px;
-}
-
-#tag_list::item {
-  padding: 3px;
-  background: blue;
-}
-
-QPushButton {
-  border: 0;
-  padding: 4px 10px;
-  font-size: 14px;
-  border-bottom-right-radius: 6px;
-  border-top-left-radius: 6px;
-  margin: 3px 6px;
-}
-
-#show_untagged_toggle {
-  padding: 7px 14px;
-  color: white;
-  font-size: 14px;
-  spacing: 10px;
-}
-#show_untagged_toggle::indicator {
-  background: white;
-}
-#show_untagged_toggle::indicator:unchecked {
-}
-#show_untagged_toggle::indicator:checked {
-  border: 2px solid white;
-}
-
-QTabWidget::pane {
-  border-top: 1px solid #000;
-}
-
-QTabWidget::tab-bar {
-  left: 4px;
-}
-
-QTabBar {
-  font-weight: bold;
-}
-QTabBar::tab {
-  padding: 5px 10px 4px;
-  margin: 2px;
-  margin-bottom: 0;
-  border: 1px solid #777;
-  border-top-left-radius: 4px;
-  border-top-right-radius: 4px;
-  background: #999;
-  color: black;
-}
-
-QTabBar::tab:selected {
-  background: #eee;
-  color: black;
-}
-
-QTabBar::tab:hover {
-  background: #fff;
-  color: black;
-}
-
-LeftColumn QPushButton {
-  background: #666;
-  color: white;
-  border: 1px solid #555;
-  padding: 5px;
-}
-
-QScrollArea {
-  border: none;
-}
-
-#info_box {
-  background: #090909;
-}
-
-#info_box * {
-  color: #fff;
-}
-
 #tag {
   font-style: italic;
 }
 
-/* Files tab */
 
-QTreeWidget {
-  background: #111;
-  color: white;
-  font-size: 14px;
+/* ==================
+ * ==== GEOMETRY ====
+ * ================== */
+
+QPushButton {
+  border: 0;
+  padding: 4px 10px;
+  border-bottom-right-radius: 6px;
+  border-top-left-radius: 6px;
+  margin: 3px 6px;
+}
+QScrollArea, #tagging_window_tag_list {
+  border: none;
 }
 
-
-/* Splitters */
-
-QSplitter::handle, #main_divider {
-  background: #555;
+/*
+ * Tag list
+ */
+#show_untagged_toggle {
+  padding: 7px auto;
 }
+#tag_list {
+  border-top: 2px solid black;
+  padding: 2px;
+}
+#tag_list::item {
+  padding: 3px;
+}
+
+/*
+ * Thumb view
+ */
+#thumb_view::item {
+  margin: 10px;
+}
+#thumb_view_status_bar {
+  padding-left: 5px;
+  padding-top: 2px;
+}
+#thumb_view_selection_label {
+  margin-left: 20px;
+}
+
+/*
+ * Tagging window
+ */
+#tagging_window_tag_list::item {
+  padding: 5px;
+}
+
+/*
+ * Splitters
+ */
 QSplitter::handle:horizontal {
   width: 8px;
 }
@@ -219,50 +192,26 @@ QSplitter::handle:vertical {
   height: 8px;
 }
 
-
-/* Progress bar */
-
+/*
+ * Progress bar
+ */
 QProgressBar {
   border: 0;
-  background: #000;
   text-align: center;
-  color: white;
-}
-QProgressBar::chunk {
-  background: #444;
 }
 
-
-/* Scroll bars */
-
-QScrollBar:vertical, QAbstractScrollArea::corner, QScrollBar:horizontal {
-    background: #080808;
-}
+/*
+ * Scroll bars
+ */
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-    background: #666;
     border-radius: 7px;
 }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-    background: none;
-}
-
-QScrollBar:vertical {
+QScrollBar:vertical, QScrollBar:horizontal {
     width: 15px;
-}
-QScrollBar::handle:vertical {
-    min-height: 20px;
-}
-QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {
-    height: 0px;
-}
-
-QScrollBar:horizontal {
     height: 15px;
 }
-QScrollBar::handle:horizontal {
-    min-width: 20px;
-}
+QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical,
 QScrollBar::sub-line:horizontal, QScrollBar::add-line:horizontal {
-    width: 0px;
+    height: 0;
+    width: 0;
 }

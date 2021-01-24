@@ -5,7 +5,7 @@ import itertools
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (Any, Dict, FrozenSet, Generic, Iterable, List, NamedTuple,
+from typing import (Any, Callable, Dict, FrozenSet, Generic, Iterable, List, NamedTuple,
                     Optional, Protocol, Set, Tuple, TypeVar, Union, cast)
 
 from libsyntyche.widgets import Signal2, mk_signal2
@@ -26,6 +26,7 @@ HOVERING = next(_data_ids)
 FILE_FORMAT = next(_data_ids)
 PATH_STRING = next(_data_ids)
 FILE_NAME = next(_data_ids)
+IS_NEW = next(_data_ids)
 
 CONFIG = Path.home() / '.config' / 'tistel' / 'config.json'
 CACHE = Path.home() / '.cache' / 'tistel' / 'cache.json'
@@ -244,6 +245,59 @@ class ListWidget2(QtWidgets.QListView, Generic[T]):
 
     def takeRow(self, pos: int) -> T:
         return cast(T, self._model.takeRow(pos)[0])
+
+
+S = TypeVar('S', bound=QtWidgets.QStyledItemDelegate)
+
+
+class CustomDrawListItem(QtGui.QStandardItem):
+    @property
+    def hovering(self) -> bool:
+        return cast(bool, self.data(HOVERING))
+
+    @hovering.setter
+    def hovering(self, hovering: bool) -> None:
+        self.setData(hovering, HOVERING)
+
+
+T2 = TypeVar('T2', bound=CustomDrawListItem)
+
+
+class CustomDrawListWidget(ListWidget2[T2]):
+    def __init__(self, parent: QtWidgets.QWidget,
+                 delegate: Callable[[QtWidgets.QWidget], S],
+                 filter_model: Optional[QtCore.QSortFilterProxyModel] = None) -> None:
+        super().__init__(parent, filter_model)
+        self.setItemDelegate(delegate(self))
+        self.setMouseTracking(True)
+        self.last_item: Optional[T2] = None
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        item = self.itemAt(event.pos())
+        if self.last_item != item:
+            if item is not None:
+                self.setCursor(Qt.PointingHandCursor)
+                item.hovering = True
+            else:
+                self.setCursor(Qt.ArrowCursor)
+            if self.last_item is not None:
+                self.last_item.hovering = False
+            self.last_item = item
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        super().leaveEvent(event)
+        if self.last_item is not None:
+            self.last_item.hovering = False
+
+    def enterEvent(self, event: QtCore.QEvent) -> None:
+        super().enterEvent(event)
+        if self.last_item is not None:
+            self.last_item.hovering = False
+        item = self.itemAt(cast(QtGui.QEnterEvent, event).pos())
+        if item is not None:
+            self.setCursor(Qt.PointingHandCursor)
+            item.hovering = True
+        self.last_item = item
 
 
 class IconWidget(QtSvg.QSvgWidget):

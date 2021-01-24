@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialogButtonBox
 
 from . import shared
-from .shared import ImageData, ListWidget2
+from .shared import CustomDrawListItem, CustomDrawListWidget, ImageData, ListWidget2
 
 
 class SortProxyModel(QtCore.QSortFilterProxyModel):
@@ -68,11 +68,56 @@ class TagInput(QtWidgets.QLineEdit):
         return super().event(raw_ev)
 
 
-class TaggingListItem(QtGui.QStandardItem):
+class TagListDelegate(QtWidgets.QStyledItemDelegate):
+    def paint(self, painter: QtGui.QPainter,
+              option: QtWidgets.QStyleOptionViewItem,
+              index: QtCore.QModelIndex) -> None:
+        parent = cast(CustomDrawListWidget[TaggingListItem], option.styleObject)
+        item = parent.itemFromIndex(index)
+        tag = item.tag_name
+        painter.setRenderHints(QtGui.QPainter.Antialiasing)
+        padding = (option.rect.height() - option.fontMetrics.height()) // 2
+        rect = option.rect.adjusted(padding, padding, -padding, -padding)
+        cb_rect = QtCore.QRect(rect.topLeft(), QtCore.QSize(rect.height(), rect.height()))
+        rect.adjust(cb_rect.width() + padding, 0, 0, 0)
+        painter.fillRect(cb_rect, Qt.white)
+        # TODO: de-hardcode this?
+        check_color = QtGui.QColor('#06a')
+        if item.checkState() == Qt.PartiallyChecked:
+            bw = 2
+            painter.fillRect(cb_rect.adjusted(bw, bw, -bw, -bw), check_color)
+        elif item.checkState() == Qt.Checked:
+            old_pen = painter.pen()
+            new_pen = QtGui.QPen(check_color)
+            new_pen.setWidth(3)
+            painter.setPen(new_pen)
+            w = cb_rect.width()
+            painter.drawPolyline(cb_rect.topLeft() + QtCore.QPoint(int(w * 0.2), int(w * 0.55)),
+                                 cb_rect.center() + QtCore.QPoint(0, int(w * 0.45)),
+                                 cb_rect.topRight() + QtCore.QPoint(-int(w * 0.2), int(w * 0.25)))
+            painter.setPen(old_pen)
+        count = item.tag_count
+        visible_count = item.visible_tag_count
+        if item.hovering:
+            painter.fillRect(option.rect, QtGui.QColor(255, 255, 255, 0x33))
+        painter.drawText(rect, Qt.TextSingleLine, tag + (' (NEW)' if item.is_new else ''))
+        painter.drawText(rect, Qt.AlignRight | Qt.TextSingleLine, f'{visible_count} / {count}')
+
+
+
+class TaggingListItem(CustomDrawListItem):
     def __init__(self, text: str) -> None:
         super().__init__(text)
         self.setCheckable(True)
         self.setEditable(False)
+
+    @property
+    def is_new(self) -> bool:
+        return cast(bool, self.data(shared.IS_NEW))
+
+    @is_new.setter
+    def is_new(self, is_new: bool) -> None:
+        self.setData(is_new, shared.IS_NEW)
 
     @property
     def tag_count(self) -> int:
@@ -99,6 +144,17 @@ class TaggingListItem(QtGui.QStandardItem):
         self.setData(visible_count, shared.VISIBLE_TAG_COUNT)
 
 
+class TagListWidget(CustomDrawListWidget[TaggingListItem]):
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        item = self.itemAt(event.pos())
+        if item is not None:
+            if event.button() == Qt.LeftButton:
+                if item.checkState() == Qt.Checked:
+                    item.setCheckState(Qt.Unchecked)
+                else:
+                    item.setCheckState(Qt.Checked)
+
+
 class TagChanges(NamedTuple):
     tags_to_add: FrozenSet[str]
     tags_to_remove: FrozenSet[str]
@@ -108,8 +164,9 @@ class TaggingWindow(QtWidgets.QDialog):
     def __init__(self, images: List[ImageData], total_tags: Counter[str],
                  parent: QtWidgets.QWidget) -> None:
         super().__init__(parent)
+        self.setObjectName('tagging_window')
         self.original_tags: Counter[str] = total_tags
-        self.resize(300, 500)
+        self.resize(400, int(parent.height() * 0.7))
 
         # Main layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -138,15 +195,20 @@ class TaggingWindow(QtWidgets.QDialog):
         cast(Signal0, self.add_tag_button.clicked).connect(self._add_tag)
 
         # Tag list
-        layout.addWidget(QtWidgets.QLabel('All tags'))
+        tag_header_layout = QtWidgets.QHBoxLayout()
+        layout.addLayout(tag_header_layout)
+        tag_header_layout.addWidget(QtWidgets.QLabel('All tags'))
+        tag_header_layout.addStretch()
         self._sort_model = SortProxyModel()
-        self.tag_list: ListWidget2[TaggingListItem] = ListWidget2(self, self._sort_model)
+        self.tag_list = TagListWidget(self, TagListDelegate, self._sort_model)
+        self.tag_list.setObjectName('tagging_window_tag_list')
         tag_counter: Counter[str] = Counter()
         for img in images:
             tag_counter.update(img.tags)
         for tag, total in total_tags.items():
             count = tag_counter.get(tag, 0)
             item = TaggingListItem(f'{tag} ({count}/{total})')
+            item.is_new = False
             item.tag_name = tag
             item.tag_count = total
             item.visible_tag_count = count
@@ -164,7 +226,7 @@ class TaggingWindow(QtWidgets.QDialog):
              'Selected count': shared.VISIBLE_TAG_COUNT,
              'Total count': shared.TAG_COUNT},
         )
-        layout.addWidget(self.sort_button)
+        tag_header_layout.addWidget(self.sort_button)
 
         # Buttons
         button_box = QDialogButtonBox(self)
@@ -193,6 +255,7 @@ class TaggingWindow(QtWidgets.QDialog):
                 item.setCheckState(Qt.Checked)
             else:
                 item = TaggingListItem(f'{tag} (NEW)')
+                item.is_new = True
                 item.tag_name = tag
                 item.tag_count = 0
                 item.visible_tag_count = 0
