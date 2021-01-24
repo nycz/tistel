@@ -115,6 +115,7 @@ class MainWindow(app.RootWindow):
 
         # Right column - big image
         self.image_view_splitter = QtWidgets.QSplitter(Qt.Vertical, self)
+        self.image_view_splitter.setObjectName('image_view_splitter')
 
         self.image_view = ImagePreview(self.image_view_splitter)
         self.image_view.setObjectName('image_view')

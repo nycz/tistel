@@ -11,7 +11,14 @@ MainWindow, #image_view, #tagging_window {
 
 #info_box, #tag_list, #tag_list_box, #thumb_view, QTreeWidget,
 #tagging_window_tag_list,
-QScrollBar:vertical, QAbstractScrollArea::corner, QScrollBar:horizontal {
+#tag_list QScrollBar:vertical, #tag_list QAbstractScrollArea::corner,
+#tag_list QScrollBar:horizontal,
+#image_view_splitter QScrollBar:vertical, #image_view_splitter QAbstractScrollArea::corner,
+#image_view_splitter QScrollBar:horizontal,
+#tagging_window QScrollBar:vertical, #tagging_window QAbstractScrollArea::corner,
+#tagging_window QScrollBar:horizontal,
+#thumb_view QScrollBar:vertical, #thumb_view QAbstractScrollArea::corner,
+#thumb_view QScrollBar:horizontal {
   background: #111;
 }
 
@@ -101,7 +108,7 @@ QProgressBar::chunk {
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
   background: #333;
 }
-QSplitter::handle, #main_divider {
+MainWindow > QSplitter::handle, #main_divider {
   background: #555;
 }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
