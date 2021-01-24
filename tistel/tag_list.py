@@ -139,6 +139,7 @@ class TagListContainer(QtWidgets.QWidget):
         for tag, count in tags.most_common():
             self.list_widget.create_tag(tag, count)
         self.show_untagged_toggle.total_count = untagged
+        self.show_untagged_toggle.update()
         model = cast(QtCore.QSortFilterProxyModel, self.list_widget.model())
         model.sort(0, model.sortOrder())
 
@@ -161,6 +162,7 @@ class TagListContainer(QtWidgets.QWidget):
             if count > 0:
                 self.list_widget.create_tag(tag, count)
         self.show_untagged_toggle.total_count = untagged
+        self.show_untagged_toggle.update()
 
     def update_visible_tags(self, tag_count: Counter[str]) -> None:
         for item in self.list_widget.items():
