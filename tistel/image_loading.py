@@ -97,7 +97,7 @@ def generate_thumbnail(thumb_path: Path, image_path: Path,
     if pixmap is None:
         return False
     # Rotate the thumbnail
-    orientation = try_to_get_orientation(thumb_path)
+    orientation = try_to_get_orientation(image_path)
     if orientation:
         transform = set_rotation(orientation)
         if not transform.isIdentity():
